@@ -5,7 +5,11 @@ import os
 import pytest
 
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
-pytest.importorskip("PySide6")
+try:
+    import PySide6.QtTest  # noqa: F401
+    import PySide6.QtWidgets  # noqa: F401
+except ImportError as exc:  # e.g. missing system GL libraries
+    pytest.skip(f"PySide6 cannot be loaded: {exc}", allow_module_level=True)
 
 from PySide6.QtCore import Qt  # noqa: E402
 from PySide6.QtTest import QTest  # noqa: E402

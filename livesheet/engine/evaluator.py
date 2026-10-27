@@ -221,16 +221,23 @@ class Engine:
             _check_defined(meas.magnitude)
         try:
             m0, m1, dm = start.magnitude, end.magnitude, step.magnitude
-            if dm == 0:
+            if any(x.is_finite is False for x in (m0, m1, dm)):
+                raise StatementError("Range limits must be finite numbers")
+            if any(x.is_real is False for x in (m0, m1, dm)):
+                raise StatementError("Range limits must be real numbers")
+            if dm.is_zero:
                 raise StatementError("step must not be zero")
             quotient = float((m1 - m0) / dm)
-        except TypeError:
+        except (TypeError, OverflowError):
             raise StatementError("Range limits must be real numbers") from None
         if quotient < 0:
             raise StatementError("step has the wrong sign")
-        count = math.floor(quotient + _COUNT_TOLERANCE) + 1
+        if not math.isfinite(quotient) or quotient >= MAX_RANGE_VALUES:
+            count = MAX_RANGE_VALUES + 1 if not math.isfinite(quotient) else math.floor(quotient + _COUNT_TOLERANCE) + 1
+        else:
+            count = math.floor(quotient + _COUNT_TOLERANCE) + 1
         if count > MAX_RANGE_VALUES:
-            raise StatementError(f"too many values ({count}, limit {MAX_RANGE_VALUES})")
+            raise StatementError(f"too many values (limit {MAX_RANGE_VALUES})")
         return RangeVar(m0, dm, count, start.dims)
 
     def _range_step(self, st: Statement, start: Measured, env: dict) -> Measured:

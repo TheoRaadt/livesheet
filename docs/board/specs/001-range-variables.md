@@ -76,7 +76,7 @@ Engine-level, via `Engine.evaluate`. "Rows" means the structured result `RegionR
 - Using a range variable inside another definition (`y := 2*t`) is out of scope: error "t is a range variable" (no implicit vectorisation in this slice).
 - Function parameters named like a range variable shadow the range inside that function body (the function is evaluated per value by substitution of the argument, so `f(t)` works).
 - Floating point: dimensionless fractional steps use the tolerance rule above (1e-9 on the count); a range whose end differs from the grid by more than that tolerance is not extended.
-- Errors in one cell (for example `table i, 1/(i-2)` for `i := 1 to 3`) make the whole table an error with the existing message ("Division by zero"); no partial tables.
+- Errors in one cell (for example `table i, 1/(i-2)` for `i := 1 to 3`) follow the existing evaluator behaviour (a division by zero shows `undefined` in that cell, like `1/(x-2) =` does; a unit or syntax error in any cell makes the whole table an error); no partial tables on errors. (Updated 2026-10-27 after tester finding D4.)
 - The 10000-value limit is a constant in the engine so it can be changed later.
 
 ## Out of scope (later specs)

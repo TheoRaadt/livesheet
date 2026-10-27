@@ -32,7 +32,7 @@ _SQRT_RE = re.compile(r"√\s*(?=\()")
 _SQRT_ATOM_RE = re.compile(r"√\s*([\w.]+)")
 
 _RANGE_RE = re.compile(r"^(.+?)\s+to\s+(.+?)(?:\s+step\s+(.+))?$")
-_TABLE_RE = re.compile(r"^table(?:\s+(.*))?$")
+_TABLE_RE = re.compile(r"^table(?:\s+(.*))?$", re.DOTALL)
 _IN_RE = re.compile(r"\sin\s")
 
 _REPLACEMENTS = [
@@ -195,7 +195,7 @@ def _split_top_level(text: str) -> list[str]:
         if ch in "([{":
             depth += 1
         elif ch in ")]}":
-            depth -= 1
+            depth = max(0, depth - 1)
         elif ch == "," and depth == 0:
             parts.append(text[start:i])
             start = i + 1
@@ -212,7 +212,7 @@ def _split_column_unit(col: str) -> tuple[str, str]:
         if ch in "([{":
             depth += 1
         elif ch in ")]}":
-            depth -= 1
+            depth = max(0, depth - 1)
     last = None
     for mt in _IN_RE.finditer(col):
         if depth_at[mt.start()] == 0:
