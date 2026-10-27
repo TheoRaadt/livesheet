@@ -90,3 +90,7 @@ QT_QPA_PLATFORM=offscreen pytest
 - Real 2-D math typesetting (fractions, roots, integrals)
 - Solve blocks (`given … find`)
 - Temperature units with offsets (°C, °F)
+
+## License
+
+Dual-licensed under either the MIT license ([LICENSE-MIT](LICENSE-MIT)) or the Apache License 2.0 ([LICENSE-APACHE](LICENSE-APACHE)), at your option.
