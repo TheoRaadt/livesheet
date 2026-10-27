@@ -185,41 +185,97 @@ def _violations(constraints: list[Constraint], z, tol: float) -> list[tuple[floa
 
 
 def settle(engine: "Engine", model: str, regions: list[Statement], env: dict) -> Solution:
+    import warnings
+
     try:
-        from scipy import optimize
+        import numpy as np
+        from scipy import optimize  # noqa: F401 - checked here so that a missing package is reported cleanly
     except ImportError:
         raise StatementError("Solving needs the scipy package") from None
+    with np.errstate(all="ignore"), warnings.catch_warnings():
+        warnings.simplefilter("ignore")
+        return _settle(engine, model, regions, env)
+
+
+def _starts(z0):
+    """Deterministic starting points: the guess, small perturbations, then rescaled guesses."""
+    import numpy as np
+
+    yield z0
+    h = 1e-3 * np.maximum(1.0, np.abs(z0))
+    yield z0 + h
+    yield z0 - h
+    base = np.where(z0 != 0, z0, 1.0)
+    for k in range(1, 13):
+        yield base * 10.0 ** k
+        yield -base * 10.0 ** k
+
+
+def _attempt(optimize, np, constraints, z0, start, settings):
+    """One solver run from ``start``; returns (z, evaluations used, hit the step limit)."""
+    n_eq, n = len(constraints), len(z0)
+
+    def fun(z):
+        return _residuals(constraints, z)
+
+    if n_eq == n:
+        res = optimize.root(fun, start, method="hybr", tol=1e-14, options={"maxfev": settings.steps})
+        return res.x, int(res.nfev), res.status == 2 or (not res.success and res.nfev >= settings.steps)
+    if n_eq > n:
+        res = optimize.least_squares(fun, start, xtol=1e-15, ftol=1e-15, gtol=1e-15, max_nfev=settings.steps)
+        return res.x, int(res.nfev), res.status == 0
+    res = optimize.minimize(lambda z: float(np.sum((z - z0) ** 2)), start, method="SLSQP",
+                            jac=lambda z: 2 * (z - z0),
+                            constraints=[{"type": "eq", "fun": fun}],
+                            options={"maxiter": settings.steps, "ftol": 1e-16})
+    return _polish(constraints, res.x, fun), int(res.nit), res.status == 9
+
+
+def _strict(constraints, z) -> list[float]:
+    out = []
+    for c in constraints:
+        try:
+            out.append(abs(_scalar(c.left(*z)) - _scalar(c.right(*z))) / c.ref)
+        except (ArithmeticError, ValueError, TypeError):
+            out.append(float("inf"))
+    return out
+
+
+def _worst(constraints, z, tol):
+    viol = _violations(constraints, z, tol)
+    return max(viol, key=lambda v: (v[0] if math.isfinite(v[0]) else float("inf")))
+
+
+def _settle(engine: "Engine", model: str, regions: list[Statement], env: dict) -> Solution:
+    from scipy import optimize
     import numpy as np
 
     unknowns = declare(engine, model, regions, env)
     settings = read_settings(engine, regions, env)
     constraints = build_constraints(engine, regions, unknowns, env)
     z0 = np.array([u.start for u in unknowns], dtype=float)
-    n_eq, n = len(constraints), len(unknowns)
-    limit = False
-
-    def fun(z):
-        return _residuals(constraints, z)
-
-    if n_eq == n:
-        res = optimize.root(fun, z0, method="hybr", tol=1e-14, options={"maxfev": settings.steps})
-        z, used, limit = res.x, int(res.nfev), res.status == 2 or (not res.success and res.nfev >= settings.steps)
-    elif n_eq > n:
-        res = optimize.least_squares(fun, z0, xtol=1e-15, ftol=1e-15, gtol=1e-15, max_nfev=settings.steps)
-        z, used, limit = res.x, int(res.nfev), res.status == 0
-    else:
-        res = optimize.minimize(lambda z: float(np.sum((z - z0) ** 2)), z0, method="SLSQP",
-                                jac=lambda z: 2 * (z - z0),
-                                constraints=[{"type": "eq", "fun": fun}],
-                                options={"maxiter": settings.steps, "ftol": 1e-16})
-        z, used, limit = res.x, int(res.nit), res.status == 9
-        z = _polish(constraints, z, fun)
-    viol = _violations(constraints, z, settings.accuracy)
-    worst, source = max(viol, key=lambda v: (v[0] if math.isfinite(v[0]) else float("inf")))
-    if worst <= settings.accuracy:
-        return Solution(unknowns, [float(zi) * u.scale for zi, u in zip(z, unknowns)])
-    if limit:
-        raise StatementError(f"Not converged: stopped after {used} steps, largest violation {worst:.1e} "
+    best = None            # (worst violation, source, z)
+    first = None           # (evaluations used, hit the step limit) of the run from the guess
+    first_run = True
+    for start in _starts(z0):
+        z, used, limit = _attempt(optimize, np, constraints, z0, start, settings)
+        if first is None:
+            first = (used, limit)
+        worst, source = _worst(constraints, z, settings.accuracy)
+        if first_run:
+            first_run = False
+        else:
+            # a retried start must satisfy the stricter test relative to the guess scale only,
+            # otherwise huge values would pass the relative rule trivially (x == x + 1 at x = 1e12)
+            worst = max(_strict(constraints, z))
+        if worst <= settings.accuracy:
+            return Solution(unknowns, [float(zi) * u.scale for zi, u in zip(z, unknowns)])
+        if best is None or worst < best[0] or not math.isfinite(best[0]):
+            best = (worst, source, z)
+    worst, source, _ = best
+    if first[1]:
+        raise StatementError(f"Not converged: stopped after {first[0]} function evaluations "
+                             f"(steps limit {settings.steps}), largest violation {worst:.1e} "
                              "(try another starting guess or raise steps)")
     raise StatementError(f'No solution found: closest point violates "{source}" by {worst:.1e}')
 

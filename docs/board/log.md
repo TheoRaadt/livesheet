@@ -15,3 +15,5 @@
 2026-10-27 developer -> manager: GUI fixes G0 (save dialog defaults), G1 (:: -> ≡), G2 (matrix grid via RegionResult.grid); tests/test_gui_helpers.py; Qt parts unrun in VM. Not committed.
 2026-10-27 tester -> manager: GUI recheck on c0b25a2: G0/G1/G2 PASS (grids render well, dialogs suggest Documents/, cancel writes nothing, git clean); open: tall grids overlap regions placed below, wide symbolic grids run off-window (reviews/001)
 2026-10-27 developer -> manager: spec 003 phase A implemented (engine/solver.py, syntax kinds model_*, tests/test_solve.py). Phase B kinds parse but report 'not available yet'. Not committed.
+2026-10-27 tester -> manager: spec 003 phase A review on 280f2c3: criteria 1-11 PASS headless; tests/test_solve_blackbox.py 70 pass + 9 strict xfail; defects S1 (far root from small guess), S2 (zero-derivative guess), S3 (numpy warning leak), S4 (steps used > limit); GUI not run; see reviews/003-solve-blocks.md. Not committed.
+2026-10-27 developer -> manager: fixed review 003 S1-S4 (retry starts, strict check on retries, warnings suppressed, 'function evaluations' wording). Not committed.
