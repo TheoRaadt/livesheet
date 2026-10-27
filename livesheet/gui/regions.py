@@ -19,6 +19,7 @@ from PySide6.QtWidgets import (
 )
 
 from ..engine import RegionResult
+from ..engine.formatting import format_table
 from .pretty import display_source, pretty_source_html
 
 GRID = 10
@@ -255,6 +256,10 @@ class MathRegion(Region):
             html = ""
         elif result.status == "error":
             html = f'<span style="color:{COLOR_ERROR}; font-size:small">&nbsp;⚠ {_esc(result.error)}</span>'
+        elif result.rows:
+            text = format_table(result.columns, result.rows)
+            html = (f'<pre style="color:{COLOR_RESULT}; font-family:Menlo,Consolas,monospace; '
+                    f'margin:0">{_esc(text)}</pre>')
         else:
             html = f'<span style="color:{COLOR_RESULT}">{_esc(result.output)}</span>' if result.output else ""
         self.result_item.setHtml(html)

@@ -36,6 +36,11 @@ BASE_ORDER = [
     ("luminous_intensity", "cd"),
 ]
 
+BASE_UNIT_BY_DIM = {
+    "mass": kg, "length": m, "time": s, "current": A,
+    "temperature": K, "amount_of_substance": mol, "luminous_intensity": cd,
+}
+
 # SymPy measures mass internally in grams (kilogram has scale factor 1000).
 _INTERNAL_SCALE = {"mass": sp.Integer(1000)}
 

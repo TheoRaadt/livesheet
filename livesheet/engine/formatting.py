@@ -136,3 +136,15 @@ def format_value(expr, sig: int = DEFAULT_SIGNIFICANT) -> str:
     if isinstance(expr, (list, tuple)):
         return "{" + ", ".join(format_expr(e, sig) for e in expr) + "}"
     return format_expr(expr, sig)
+
+
+def format_table(columns: list[str], rows: list[list[str]]) -> str:
+    """Plain monospaced text table: right-aligned cells, two spaces between columns."""
+    widths = [len(c) for c in columns]
+    for row in rows:
+        for i, cell in enumerate(row):
+            widths[i] = max(widths[i], len(cell))
+    lines = ["  ".join(c.rjust(w) for c, w in zip(columns, widths))]
+    lines.append("  ".join("-" * w for w in widths))
+    lines.extend("  ".join(c.rjust(w) for c, w in zip(row, widths)) for row in rows)
+    return "\n".join(lines)

@@ -18,3 +18,8 @@
 - 002: `[12x12 matrix]` placeholder above 10x10 OK? NumPy allowed in 002b? LU/QR/SVD need multi-result syntax (later)
 - 003: scipy (BSD-3, ~40-60 MB with numpy) as dependency? Recommended yes; names vary/settle/least/most OK? GUI freeze on slow models accepted for now?
 - Spec numeric examples were hand-derived, not yet run: tester must verify them against SymPy/SciPy before developer relies on them
+
+## Decided 2026-10-27 (after specs)
+- README roadmap uses `to`/`step`, not `..`
+- scipy approved (BSD-3); names vary/settle/least/most OK; 1-based indexing OK; `[NxN matrix]` placeholder >10x10 OK
+- Order: 001 -> 002a -> 003; tester verifies spec numbers first; tester opens/closes the real windows itself

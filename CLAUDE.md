@@ -31,3 +31,5 @@ Agents share state only via docs/board/ (backlog, specs, reviews, log.md, decisi
 ## Conventions
 - Communicate with Theo in Dutch; code, docs, commits and comments in English.
 - Type hints, small functions, tests for every engine feature.
+- Testing: the tester must also launch the real app and open/close its windows itself (computer use on Theo's Mac), not only run headless tests.
+- Dependencies: sympy, PySide6, scipy (approved 2026-10-27).

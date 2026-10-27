@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import tokenize
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Hashable, Iterable
 
 import sympy as sp
@@ -15,9 +15,12 @@ from sympy.parsing.sympy_parser import (
     standard_transformations,
 )
 
+import math
+import re
+
 from .formatting import format_expr, format_number, format_value
 from .syntax import Statement, StatementError, parse_statement
-from .units import UNITS, UnitError, dims_to_text, measure
+from .units import BASE_UNIT_BY_DIM, UNITS, Measured, UnitError, dims_to_text, measure
 
 TRANSFORMS = standard_transformations + (implicit_multiplication, convert_xor)
 
@@ -55,6 +58,30 @@ def _builtins() -> dict:
 
 BUILTINS = _builtins()
 
+MAX_RANGE_VALUES = 10000
+_COUNT_TOLERANCE = 1e-9
+_IDENT_FIND_RE = re.compile(r"(?<![\w.])[^\W\d]\w*")
+_NUMBER_RE = re.compile(r"(?<![\w.])(?:\d+\.?\d*|\.\d+)(?:[eE][-+]?\d+)?")
+
+
+@dataclass
+class RangeVar:
+    """Evenly spaced values ``start + k*step`` (SI magnitudes) with a common dimension."""
+
+    start: sp.Expr
+    step: sp.Expr
+    count: int
+    dims: tuple
+
+    def unit_expr(self) -> sp.Expr:
+        expr = sp.Integer(1)
+        for dim, exp in self.dims:
+            expr = expr * BASE_UNIT_BY_DIM[dim] ** exp
+        return expr
+
+    def value(self, k: int) -> sp.Expr:
+        return (self.start + k * self.step) * self.unit_expr()
+
 
 @dataclass
 class RegionResult:
@@ -62,6 +89,8 @@ class RegionResult:
     output: str = ""        # text shown next to the input, e.g. "= 12.5 m/s"
     error: str = ""
     defines: str = ""       # name defined by this region, if any
+    columns: list[str] = field(default_factory=list)       # table header (table statements)
+    rows: list[list[str]] = field(default_factory=list)    # table cells, one list per row
 
 
 class Engine:
@@ -72,10 +101,15 @@ class Engine:
 
     # -- parsing -------------------------------------------------------------
 
-    def parse(self, text: str, env: dict) -> sp.Expr:
+    def parse(self, text: str, env: dict, keep_units: bool = False) -> sp.Expr:
         text = text.strip()
         if not text:
             raise StatementError("Empty expression")
+        for name in _IDENT_FIND_RE.findall(text):
+            if isinstance(env.get(name), RangeVar):
+                raise StatementError(f"{name} is a range variable (use table)")
+        if keep_units:  # unevaluated tree, so that e.g. ``0 s`` keeps its unit
+            return self._parse_unevaluated(text, env)
         if text.count("==") == 1:
             lhs, rhs = text.split("==")
             return sp.Eq(self.parse(lhs, env), self.parse(rhs, env))
@@ -83,6 +117,17 @@ class Engine:
         try:
             return parse_expr(text, local_dict=local, global_dict=dict(BUILTINS),
                               transformations=TRANSFORMS, evaluate=True)
+        except (SyntaxError, tokenize.TokenError, sp.SympifyError):
+            raise StatementError("Syntax error") from None
+        except TypeError as exc:
+            raise StatementError(_type_error_text(exc)) from None
+
+    def _parse_unevaluated(self, text: str, env: dict) -> sp.Expr:
+        glob = dict(BUILTINS)
+        glob.update(Mul=sp.Mul, Add=sp.Add, Pow=sp.Pow)
+        try:
+            return parse_expr(text, local_dict=dict(env), global_dict=glob,
+                              transformations=TRANSFORMS, evaluate=False)
         except (SyntaxError, tokenize.TokenError, sp.SympifyError):
             raise StatementError("Syntax error") from None
         except TypeError as exc:
@@ -106,13 +151,13 @@ class Engine:
         env: dict = dict(UNITS)
         for key, _ in regions:
             st = statements.get(key)
-            if st is not None and st.kind == "global":
+            if st is not None and _is_global(st):
                 results[key] = self._run(st, env)
 
         # Pass 2: everything else, in reading order.
         for key, _ in regions:
             st = statements.get(key)
-            if st is None or st.kind == "global":
+            if st is None or _is_global(st):
                 continue
             results[key] = self._run(st, env)
         return results
@@ -127,6 +172,11 @@ class Engine:
                 if st.show:
                     out = "= " + self._numeric(value, st.unit, env)
                 return RegionResult("ok", out, defines=st.name)
+            if st.kind == "range":
+                env[st.name] = self._make_range(st, env)
+                return RegionResult("ok", defines=st.name)
+            if st.kind == "table":
+                return self._table(st, env)
             if st.kind == "evaluate":
                 value = self.parse(st.expr, env)
                 return RegionResult("ok", "= " + self._numeric(value, st.unit, env))
@@ -156,6 +206,89 @@ class Engine:
         env[st.name] = value
         return value
 
+    # -- ranges and tables ---------------------------------------------------
+
+    def _make_range(self, st: Statement, env: dict) -> RangeVar:
+        start = measure(self.parse(st.expr, env, keep_units=True))
+        end = measure(self.parse(st.range_end, env, keep_units=True))
+        step = self._range_step(st, start, env)
+        for other in (end, step):
+            if other.dims != start.dims:
+                raise UnitError("Units do not match: start is "
+                                f"{dims_to_text(start.dims) or 'dimensionless'}, "
+                                f"{dims_to_text(other.dims) or 'dimensionless'} given")
+        for meas in (start, end, step):
+            _check_defined(meas.magnitude)
+        try:
+            m0, m1, dm = start.magnitude, end.magnitude, step.magnitude
+            if dm == 0:
+                raise StatementError("step must not be zero")
+            quotient = float((m1 - m0) / dm)
+        except TypeError:
+            raise StatementError("Range limits must be real numbers") from None
+        if quotient < 0:
+            raise StatementError("step has the wrong sign")
+        count = math.floor(quotient + _COUNT_TOLERANCE) + 1
+        if count > MAX_RANGE_VALUES:
+            raise StatementError(f"too many values ({count}, limit {MAX_RANGE_VALUES})")
+        return RangeVar(m0, dm, count, start.dims)
+
+    def _range_step(self, st: Statement, start: Measured, env: dict) -> Measured:
+        if st.range_step:
+            return measure(self.parse(st.range_step, env, keep_units=True))
+        # default: 1 in the unit the start was written in (e.g. 0 km -> 1 km)
+        numbers = _NUMBER_RE.findall(st.expr)
+        rest = st.expr.strip()
+        if len(numbers) == 1 and re.match(r"[-+]?\s*" + re.escape(numbers[0]), rest) \
+                and not re.search(r"[+-]", rest[len(numbers[0]) + 1:]):
+            probe = self.parse(_NUMBER_RE.sub("1", st.expr.lstrip("+-").strip(), count=1), env)
+            guess = measure(probe)
+            if guess.dims == start.dims:
+                return guess
+        return Measured(sp.Integer(1), start.dims)
+
+    def _table(self, st: Statement, env: dict) -> RegionResult:
+        used = {name for expr, _ in st.columns for name in _IDENT_FIND_RE.findall(expr)
+                if isinstance(env.get(name), RangeVar)}
+        if not used:
+            for expr, _ in st.columns:
+                _check_defined(self.parse(expr, env))
+            raise StatementError("table needs a range variable in at least one column")
+        if len(used) > 1:
+            raise StatementError("table can use only one range variable")
+        name = next(iter(used))
+        rng: RangeVar = env[name]
+        probe_dims: dict[int, tuple] = {}
+        rows: list[list[str]] = []
+        for k in range(rng.count):
+            local = dict(env)
+            local[name] = rng.value(k)
+            rows.append([self._cell(i, expr, unit, local, name, rng, probe_dims)
+                         for i, (expr, unit) in enumerate(st.columns)])
+        columns = [expr for expr, _ in st.columns]
+        label = "row" if len(rows) == 1 else "rows"
+        return RegionResult("ok", f"table {len(rows)} {label}", columns=columns, rows=rows)
+
+    def _cell(self, index: int, expr: str, unit: str, local: dict, name: str,
+              rng: RangeVar, probe_dims: dict) -> str:
+        value = self.parse(expr, local)
+        if isinstance(value, sp.Expr) and not isinstance(value, sp.Lambda) and value == 0:
+            # a zero result lost its unit while evaluating; recover it from a non-zero probe
+            if index not in probe_dims:
+                probe_dims[index] = self._probe_dims(expr, local, name, rng)
+            if probe_dims[index]:
+                return self._format_measured(Measured(sp.Integer(0), probe_dims[index]), unit, local)
+        return self._numeric(value, unit, local)
+
+    def _probe_dims(self, expr: str, local: dict, name: str, rng: RangeVar) -> tuple:
+        probe = dict(local)
+        probe[name] = rng.unit_expr()
+        try:
+            value = self.parse(expr, probe)
+            return measure(value).dims
+        except Exception:  # noqa: BLE001 - probe is best effort
+            return ()
+
     def _numeric(self, value, unit_text: str, env: dict) -> str:
         if isinstance(value, sp.Lambda):
             raise StatementError("A function needs arguments to be evaluated")
@@ -168,8 +301,9 @@ class Engine:
         if isinstance(value, sp.MatrixBase):
             raise StatementError("Matrices are not supported yet")
         _check_defined(value)
+        return self._format_measured(measure(value), unit_text, env)
 
-        meas = measure(value)
+    def _format_measured(self, meas: Measured, unit_text: str, env: dict) -> str:
         if unit_text:
             unit_val = self.parse(unit_text, env)
             _check_defined(unit_val)
@@ -245,6 +379,10 @@ class Engine:
                 out = out.subs(sp.Symbol(name.strip()), self.parse(rhs, env))
             return out
         raise StatementError(f"Unknown keyword '{kw}'")
+
+
+def _is_global(st: Statement) -> bool:
+    return st.kind == "global" or (st.kind == "range" and st.is_global)
 
 
 def _check_defined(value) -> None:

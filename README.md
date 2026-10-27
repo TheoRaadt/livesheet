@@ -85,7 +85,7 @@ QT_QPA_PLATFORM=offscreen pytest
 ## Roadmap
 
 - Undo/redo for region operations
-- Range variables and vectors/matrices (`i := 0..10`, `[1, 2; 3, 4]`)
+- Range variables and vectors/matrices (`t := 0 s to 10 s step 2 s`, `[1, 2; 3, 4]`)
 - 2-D plot regions
 - Real 2-D math typesetting (fractions, roots, integrals)
 - Solve blocks (`given … find`)
