@@ -53,3 +53,6 @@ Same blockage as reviews/001 "attempt 4": window off-Space, clicks refused, fram
 - Matrix results next to input: 2x2 PASS (`[1, 2; 3, 4]·m = [1, 2; 3, 4] m` also fine, units printed once). `eye(10)` (single ~270-character line) overlaps the neighbouring region and runs off the window (G2, FAIL, spec accepts it as the up-to-10x10 rule but the GUI does not wrap). `eye(12)` shows `[12x12 matrix]` PASS.
 - Side effect to know: defining `A := [1, 2; 3, 4]` (scratch) did not affect the demo. Earlier attempt: a scratch `x := 5` made `diff(...)`/`integrate(...)` regions fail and turned `f(x) → factor` into `→ 6` (documented in 001); removed again.
 - Spec 001 table, errors, edit/move/delete, zoom and the three File dialogs: see reviews/001 (all PASS except G0 accident, G1-G5).
+
+## GUI recheck on commit c0b25a2
+See reviews/001 "GUI recheck on commit c0b25a2": colon handling PASS (`A[1, :]` keeps the colon, `::` -> `≡`, `x:5` -> `x := 5`), matrix results render as aligned bracketed grids (eye(3), 2x2 with unit, symbolic 2x2 inverse, eye(10) fits), `eye(12)` shows the placeholder, no sideways overlap any more; grids are tall, so regions placed within their height below overlap (decision for manager). Symbolic grids can be wider than the window (no wrapping).

@@ -35,6 +35,7 @@ def pretty_source_html(source: str) -> str:
     text = text.replace("sqrt(", "√(")
     text = _SUP_RE.sub(lambda m: "<sup>" + _strip_parens(m.group(1)) + "</sup>", text)
     text = text.replace("*", "·").replace("==", "<b>=</b>")
+    text = text.replace("&lt;=", "≤").replace("&gt;=", "≥")
     return text
 
 

@@ -28,3 +28,5 @@ M4 Usability
 19. Code export to Python                                      (maple-specialist)
 
 Proposed extras (not yet approved): plugin API, standard constants/material library, step-by-step solution display, LaTeX export, Jupyter-style headless run (`livesheet run file.lsheet`), CI on GitHub Actions (macOS/Linux/Windows), packaged installers, i18n (NL/EN), accessibility.
+
+Added 2026-10-27: 20. Push-down layout / reserved space for tall results (GUI)  21. f(M):=det(M) deferred matrix evaluation  22. Clearer message when a symbol is defined elsewhere in the sheet (e.g. 'x is defined above as 5')  23. Hex/LU/QR/SVD multi-result syntax (002b+)

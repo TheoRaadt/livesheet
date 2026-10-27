@@ -35,8 +35,12 @@ _RANGE_RE = re.compile(r"^(.+?)\s+to\s+(.+?)(?:\s+step\s+(.+))?$")
 _TABLE_RE = re.compile(r"^table(?:\s+(.*))?$", re.DOTALL)
 _IN_RE = re.compile(r"\sin\s")
 
+_MODEL_TAG_RE = re.compile(rf"^(.*?)\s+in\s+({_IDENT})\s*$", re.DOTALL)
+_RELATION_RE = re.compile(r"==|<=|>=|<|>")
+_STATEMENT_OPS = (":=", "≡", "::=", "→")
+
 _REPLACEMENTS = [
-    ("\u00a0", " "),
+    ("\u00a0", " "), ("≤", "<="), ("≥", ">="),
     ("≔", ":="), ("->", "→"), ("×", "*"), ("·", "*"), ("⋅", "*"), ("÷", "/"),
     ("−", "-"), ("π", "pi"), ("∞", "oo"), ("µ", "μ"), ("°", "*deg"), ("≠", "!="),
 ]
@@ -59,6 +63,10 @@ class Statement:
     range_step: str = ""          # range: step expression, empty means default step
     is_global: bool = False       # range defined with ≡ / ::=
     columns: list[tuple[str, str]] = field(default_factory=list)  # table: (expression, unit text)
+    model: str = ""               # model_*: model name (the trailing ``in <name>`` tag)
+    guesses: list[tuple[str, str]] = field(default_factory=list)  # model_vary: (unknown, guess text)
+    goal: str = ""                # model_result: root | min | max
+    relations: list[str] = field(default_factory=list)  # model_require: one text per relation
 
 
 def normalize(text: str) -> str:
@@ -105,6 +113,10 @@ def parse_statement(source: str) -> Statement:
     table = _parse_table(text)
     if table is not None:
         return table
+
+    model = _parse_model(text)
+    if model is not None:
+        return model
 
     for op in ("≡", "::="):
         if op in text:
@@ -221,3 +233,73 @@ def _split_column_unit(col: str) -> tuple[str, str]:
     if last is None:
         return col, ""
     return col[: last.start()].strip(), col[last.end():].strip()
+
+
+# -- solve models: ``... in <name>`` tagged regions --------------------------------------
+
+def _parse_model(text: str) -> Statement | None:
+    mt = _MODEL_TAG_RE.match(text)
+    if mt is None:
+        return None
+    body, name = mt.group(1).strip(), mt.group(2)
+    if any(op in body for op in _STATEMENT_OPS) or _split_eval(body) is not None:
+        return None  # an ordinary statement that happens to end in `in <word>`
+    word = re.match(r"^(\w+)", body)
+    keyword = word.group(1) if word else ""
+    rest = body[len(keyword):].strip() if keyword else body
+    if keyword == "vary":
+        return Statement("model_vary", model=name, guesses=_parse_guesses(rest))
+    if keyword == "settle":
+        if rest:
+            raise StatementError("settle takes no expression")
+        return Statement("model_result", model=name, goal="root")
+    if keyword in ("least", "most") and (body[len(keyword):len(keyword) + 1] in ("", " ", "(")):
+        if not rest:
+            raise StatementError("least/most needs an expression")
+        return Statement("model_result", model=name, goal="min" if keyword == "least" else "max", expr=rest)
+    if keyword in ("accuracy", "steps") and rest:
+        return Statement("model_setting", model=name, name=keyword, expr=rest)
+    relations = _split_relations(body)
+    if relations is None:
+        raise StatementError('A relation is required before "in ' + name + '"')
+    return Statement("model_require", model=name, relations=relations)
+
+
+def _parse_guesses(rest: str) -> list[tuple[str, str]]:
+    guesses = []
+    for part in _split_top_level(rest):
+        mt = re.match(rf"^\s*({_IDENT})\s+from\b(.*)$", part, re.DOTALL)
+        if mt is None:
+            raise StatementError('Use "vary x from <guess>, y from <guess> in <name>"')
+        guess = mt.group(2).strip()
+        if not guess:
+            raise StatementError(f'Missing starting guess for "{mt.group(1)}"')
+        guesses.append((mt.group(1), guess))
+    if not guesses:
+        raise StatementError('Use "vary x from <guess> in <name>"')
+    return guesses
+
+
+def _split_relations(body: str) -> list[str] | None:
+    """Split ``a <= x <= b`` into ``["a <= x", "x <= b"]``; ``None`` when there is no relation."""
+    operands, ops, depth, start, i = [], [], 0, 0, 0
+    while i < len(body):
+        ch = body[i]
+        if ch in "([{":
+            depth += 1
+        elif ch in ")]}":
+            depth -= 1
+        elif depth == 0:
+            mt = _RELATION_RE.match(body, i)
+            if mt:
+                operands.append(body[start:i].strip())
+                ops.append(mt.group(0))
+                i = start = mt.end()
+                continue
+        i += 1
+    if not ops:
+        return None
+    operands.append(body[start:].strip())
+    if any(not o for o in operands):
+        raise StatementError("A relation needs an expression on both sides")
+    return [f"{operands[k]} {ops[k]} {operands[k + 1]}" for k in range(len(ops))]

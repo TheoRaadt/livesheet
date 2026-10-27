@@ -25,3 +25,7 @@
 - Order: 001 -> 002a -> 003; tester verifies spec numbers first; tester opens/closes the real windows itself
 - 2026-10-27 numpy approved as direct dependency (BSD-3)
 - 2026-10-27 `f(M) := det(M)` (deferred matrix evaluation in function bodies) postponed to backlog; unit mismatch in `C := A + B` reported at display only
+
+- 2026-10-27 GUI layout: results/tables/grids may overlap regions below them for now; backlog item 'push-down layout / reserved result space' (M2). Wide symbolic grids: no wrapping yet.
+- 2026-10-27 Save As/Export default to last-used folder or Documents; consider unique default name
+- 003 spec fix: example message for infeasible `x^2 + 1 == 0` is 5.0e-01 under the spec's own normalisation

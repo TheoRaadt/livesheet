@@ -13,3 +13,5 @@
 2026-10-27 tester -> manager: GUI retry blocked again (window off-Space, clicks refused); my earlier x:5 input left a stray region in Theo's UNSAVED demo, Theo must delete it (reviews/001 attempt 4)
 2026-10-27 tester -> manager: GUI run done (001, 002a): table/matrix/errors/zoom/dialogs OK; defects G1 '::' broken, G2 eye(10) overlaps, G0 accidental save over demo.lsheet+demo.pdf during dialog test (REPAIRED, demo restored to HEAD, pdf removed); see reviews
 2026-10-27 developer -> manager: GUI fixes G0 (save dialog defaults), G1 (:: -> ≡), G2 (matrix grid via RegionResult.grid); tests/test_gui_helpers.py; Qt parts unrun in VM. Not committed.
+2026-10-27 tester -> manager: GUI recheck on c0b25a2: G0/G1/G2 PASS (grids render well, dialogs suggest Documents/, cancel writes nothing, git clean); open: tall grids overlap regions placed below, wide symbolic grids run off-window (reviews/001)
+2026-10-27 developer -> manager: spec 003 phase A implemented (engine/solver.py, syntax kinds model_*, tests/test_solve.py). Phase B kinds parse but report 'not available yet'. Not committed.

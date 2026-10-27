@@ -19,7 +19,7 @@ import math
 import re
 
 from .formatting import format_expr, format_number, format_value
-from . import matrices
+from . import matrices, solver
 from .matrices import MATRIX_BUILTINS, rewrite_brackets, wrap
 from .syntax import Statement, StatementError, parse_statement
 from .units import BASE_UNIT_BY_DIM, UNITS, Measured, UnitError, dims_to_text, measure
@@ -80,6 +80,7 @@ def _scalar_only(name: str, fn):
 
 BUILTINS = _builtins()
 
+_TAG_RE = re.compile(r"\s+in\s+([^\W\d]\w*)\s*$")
 MAX_SHOWN = 10  # larger matrices print as a placeholder
 MAX_RANGE_VALUES = 10000
 _COUNT_TOLERANCE = 1e-9
@@ -174,11 +175,15 @@ class Engine:
         results: dict[Hashable, RegionResult] = {}
         statements: dict[Hashable, Statement] = {}
 
+        broken_models: dict[str, int] = {}   # model name -> regions that failed to parse
         for key, source in regions:
             try:
                 statements[key] = parse_statement(source)
             except StatementError as exc:
                 results[key] = RegionResult("error", error=str(exc))
+                tag = _TAG_RE.search(source)
+                if tag:
+                    broken_models[tag.group(1)] = broken_models.get(tag.group(1), 0) + 1
 
         # Pass 1: global definitions, in reading order, visible to every region.
         env: dict = dict(UNITS)
@@ -188,12 +193,61 @@ class Engine:
                 results[key] = self._run(st, env)
 
         # Pass 2: everything else, in reading order.
-        for key, _ in regions:
+        last_result: dict[str, int] = {}     # model name -> position of its last result region
+        for pos, (key, _) in enumerate(regions):
+            st = statements.get(key)
+            if st is not None and st.kind == "model_result":
+                last_result[st.model] = pos
+        earlier: dict[str, list[Statement]] = {}
+        for pos, (key, _) in enumerate(regions):
             st = statements.get(key)
             if st is None or _is_global(st):
                 continue
+            if st.kind.startswith("model_"):
+                results[key] = self._run_model(st, pos, env, earlier, last_result, broken_models)
+                continue
             results[key] = self._run(st, env)
         return results
+
+    def _run_model(self, st: Statement, pos: int, env: dict, earlier: dict, last_result: dict,
+                   broken: dict) -> RegionResult:
+        try:
+            if st.kind != "model_result":
+                if last_result.get(st.model, -1) <= pos:
+                    raise StatementError(f'No result region for model "{st.model}" below this region')
+                earlier.setdefault(st.model, []).append(st)
+                if st.kind == "model_require":
+                    try:
+                        for rel in st.relations:
+                            for side in re.split(r"==|<=|>=|<|>", rel):
+                                self.parse(side, env)
+                    except StatementError:
+                        broken[st.model] = broken.get(st.model, 0) + 1
+                        raise
+                if st.kind == "model_setting":
+                    solver.check_setting(self, st, env)
+                return RegionResult("ok")
+            if st.goal != "root":
+                raise StatementError("least and most are not available yet")
+            if broken.get(st.model):
+                raise StatementError(f'Fix the errors in the regions of model "{st.model}" first')
+            regions = earlier.get(st.model, [])
+            if not regions:
+                raise StatementError(f'No unknowns declared for model "{st.model}"')
+            solution = solver.settle(self, st.model, regions, env)
+            return RegionResult("ok", self._solution_text(solution, env))
+        except (StatementError, UnitError) as exc:
+            return RegionResult("error", error=str(exc))
+        except Exception as exc:  # noqa: BLE001 - surface any solver failure in the region
+            msg = str(exc).strip().splitlines()[0] if str(exc).strip() else type(exc).__name__
+            return RegionResult("error", error=msg[:160])
+
+    def _solution_text(self, solution, env: dict) -> str:
+        parts = []
+        for u, value in zip(solution.unknowns, solution.values):
+            parts.append(f"{u.name} = " + self._format_measured(Measured(sp.Float(value), u.dims), "", env))
+            env[u.name] = sp.Float(value) * solver._unit_expr(u.dims)
+        return "⇒ " + ", ".join(parts)
 
     def _run(self, st: Statement, env: dict) -> RegionResult:
         self._grid = None
