@@ -33,3 +33,5 @@ Agents share state only via docs/board/ (backlog, specs, reviews, log.md, decisi
 - Type hints, small functions, tests for every engine feature.
 - Testing: the tester must also launch the real app and open/close its windows itself (computer use on Theo's Mac), not only run headless tests.
 - Dependencies: sympy, PySide6, scipy (approved 2026-10-27).
+- Current state and open items: docs/STATUS.md. Agents sometimes run as general-purpose with the role prompt (the repo agents are definitions for Claude Code); handoffs always go through docs/board/.
+- Git in this mounted folder leaves .lock files; move them to .git/stale-* (no delete permission).

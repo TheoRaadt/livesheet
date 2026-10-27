@@ -30,3 +30,6 @@ M1 Engineering core · M2 Document quality · M3 CAS depth · M4 Usability (see 
 
 ## Risks
 IP/trademark (policy + review), GPL contamination, SymPy speed on large sheets (cache, incremental recalculation), Qt typesetting effort, scope creep.
+
+## Status
+See docs/STATUS.md (updated 2026-10-27). M1 is in progress: ranges, matrices (core) and solve models are built; undo/redo, plots and temperature units remain.

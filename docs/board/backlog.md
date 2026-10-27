@@ -1,9 +1,9 @@
 # Backlog (manager-owned; engineering-calc focus first)
 
 M1 Engineering core
-1. Range variables + tables            (mathcad-specialist)
-2. Vectors/matrices + linear algebra    (mathcad-specialist)
-3. Solve blocks (own syntax, constraints, numeric root/min/max)  (mathcad-specialist)
+1. [DONE 001] Range variables + tables
+2. [002a DONE; 002b eigen/rank/least squares TODO] Vectors/matrices + linear algebra
+3. [DONE 003 A+B, GUI check of B pending] Solve models (vary/settle/least/most)
 4. Undo/redo                            (developer-only, no spec needed)
 5. 2-D plot regions, unit-aware axes    (mathcad-specialist)
 6. Temperature offset units             (mathcad-specialist)

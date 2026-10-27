@@ -20,3 +20,4 @@
 2026-10-27 tester -> manager: spec 003 GUI check on b7beb0f: fall example, errors+colours, dependants, no freeze PASS; long lines run off-window (G3); LiveSheet process vanished after Backspace on selected 'settle' region (G4, unconfirmed, needs repro/traceback); delete/Save-As items not reached; nothing saved, git clean. See reviews/003. Not committed.
 2026-10-27 developer -> manager: spec 003 phase B implemented (inequalities, chained, least/most, ✓/✗ marks; tests/test_solve_b.py). Not committed.
 2026-10-27 developer -> manager: G4 fix (Worksheet._discard: single-owner deferred destruction); Qt regression tests in test_gui_helpers.py; backlog 24 added. Unverified on Mac. Not committed.
+2026-10-27 manager: documentation updated (README, STATUS, PLAN, backlog); session ended pending Mac verification of G4 and 003B GUI check
