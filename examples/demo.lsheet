@@ -1,0 +1,129 @@
+{
+  "format": "livesheet",
+  "version": 1,
+  "settings": {
+    "significant": 6
+  },
+  "regions": [
+    {
+      "kind": "text",
+      "x": 40,
+      "y": 30,
+      "text": "<b style='font-size:16pt'>LiveSheet demo</b><br>Beam under a point load — units are checked automatically."
+    },
+    {
+      "kind": "math",
+      "x": 40,
+      "y": 100,
+      "text": "L := 4 m"
+    },
+    {
+      "kind": "math",
+      "x": 480,
+      "y": 100,
+      "text": "g_n ≡ 9.81 m/s^2"
+    },
+    {
+      "kind": "math",
+      "x": 40,
+      "y": 140,
+      "text": "F := 12 kN"
+    },
+    {
+      "kind": "math",
+      "x": 40,
+      "y": 180,
+      "text": "b := 100 mm"
+    },
+    {
+      "kind": "math",
+      "x": 260,
+      "y": 180,
+      "text": "h := 200 mm"
+    },
+    {
+      "kind": "math",
+      "x": 40,
+      "y": 220,
+      "text": "I := b h^3 / 12 ="
+    },
+    {
+      "kind": "math",
+      "x": 40,
+      "y": 260,
+      "text": "M := F L / 4 ="
+    },
+    {
+      "kind": "math",
+      "x": 40,
+      "y": 300,
+      "text": "sigma := M (h/2) / I = MPa"
+    },
+    {
+      "kind": "text",
+      "x": 40,
+      "y": 360,
+      "text": "<i>Functions and symbolic algebra</i>"
+    },
+    {
+      "kind": "math",
+      "x": 40,
+      "y": 400,
+      "text": "f(x) := x^2 - 5 x + 6"
+    },
+    {
+      "kind": "math",
+      "x": 40,
+      "y": 440,
+      "text": "f(10) ="
+    },
+    {
+      "kind": "math",
+      "x": 260,
+      "y": 440,
+      "text": "f(x) → factor"
+    },
+    {
+      "kind": "math",
+      "x": 40,
+      "y": 480,
+      "text": "f(x) == 0 → solve, x"
+    },
+    {
+      "kind": "math",
+      "x": 40,
+      "y": 520,
+      "text": "diff(sin(x) exp(x), x) →"
+    },
+    {
+      "kind": "math",
+      "x": 40,
+      "y": 560,
+      "text": "integrate(exp(-x^2), (x, -oo, oo)) →"
+    },
+    {
+      "kind": "math",
+      "x": 40,
+      "y": 600,
+      "text": "v := 120 km/hr"
+    },
+    {
+      "kind": "math",
+      "x": 260,
+      "y": 600,
+      "text": "v = m/s"
+    },
+    {
+      "kind": "math",
+      "x": 40,
+      "y": 640,
+      "text": "t_stop := v / (0.8 g_n) ="
+    },
+    {
+      "kind": "math",
+      "x": 40,
+      "y": 680,
+      "text": "L + F ="
+    }
+  ]
+}

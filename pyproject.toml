@@ -1,0 +1,23 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "livesheet"
+version = "0.1.0"
+description = "Live math worksheets: free-form canvas, units and a SymPy symbolic engine"
+readme = "README.md"
+requires-python = ">=3.10"
+dependencies = ["sympy>=1.12", "PySide6>=6.6"]
+
+[project.optional-dependencies]
+dev = ["pytest>=7"]
+
+[project.scripts]
+livesheet = "livesheet.__main__:main"
+
+[tool.setuptools.packages.find]
+include = ["livesheet*"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
