@@ -19,7 +19,8 @@ from PySide6.QtWidgets import (
 )
 
 from ..engine import RegionResult
-from ..engine.formatting import format_table
+from ..engine.formatting import format_grid, format_table
+from .keys import colon_edit
 from .pretty import display_source, pretty_source_html
 
 GRID = 10
@@ -208,14 +209,10 @@ class MathRegion(Region):
             self.finish_editing(move_below=True)
             return True
         if txt == ":":
-            before = self._text_before_cursor()
-            if before.count("[") > before.count("]"):
-                cursor.insertText(":")      # slice marker inside brackets, e.g. A[1, :]
-            elif before.endswith(":"):        # '::' typed: global definition
+            delete, insert = colon_edit(self._text_before_cursor())
+            for _ in range(delete):
                 cursor.deletePreviousChar()
-                cursor.insertText("≡ ")
-            else:
-                cursor.insertText(":= ")
+            cursor.insertText(insert)
             return True
         if txt == "=" and self._text_before_cursor().rstrip().endswith(":="):
             return True                      # ':' already produced ':='
@@ -258,6 +255,10 @@ class MathRegion(Region):
             html = ""
         elif result.status == "error":
             html = f'<span style="color:{COLOR_ERROR}; font-size:small">&nbsp;⚠ {_esc(result.error)}</span>'
+        elif result.grid:
+            text = format_grid(result.grid, result.grid_unit)
+            html = (f'<pre style="color:{COLOR_RESULT}; font-family:Menlo,Consolas,monospace; '
+                    f'margin:0">{_esc(text)}</pre>')
         elif result.rows:
             text = format_table(result.columns, result.rows)
             html = (f'<pre style="color:{COLOR_RESULT}; font-family:Menlo,Consolas,monospace; '

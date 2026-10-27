@@ -40,3 +40,16 @@ None. Names (det, inv, transpose, trace, dot, cross, eye, zeros, ones, diag, had
 - M2: code stays (float literal stays float); test now asserts that. M3: backlog, xfail kept with note.
 - M4: `2^A` gives "A matrix cannot be used as an exponent". M5: `det`, `inv`, `solve_system` on matrices with symbols above 5x5 give "Matrix too large for symbolic evaluation (max 5x5); use numeric entries". M6: indexing or matrix functions on an undefined name give "B is not defined" (so `f(M) := det(M)` now says "M is not defined").
 - Non-002a: `min(5, 6)` gives "Not a function: min" (`min` is the unit minute; use `Min`). NBSP is treated as a space.
+
+## GUI session attempt (Theo had LiveSheet open)
+Same outcome as in reviews/001 (section "GUI session attempt 3"): the demo window is visible and renders correctly (20 math regions, 1 intentional error), but it is in a full-screen Space, so clicking/typing in the background had no effect and no matrix input could be tested. Still unverified in the GUI: plain colon in `A[1, :]`, `x:5` -> `:=`, `::` -> `≡`, matrix result placement (2x2, eye(10), eye(12) placeholder) and overlap. Engine side for reference: `eye(10) =` output is one line of about 270 characters.
+
+## GUI session attempt 2
+Same blockage as reviews/001 "attempt 4": window off-Space, clicks refused, frames stale. No matrix GUI checks done. I left one stray region `x:5` in Theo's unsaved demo copy (see 001), it must be deleted or the document closed without saving.
+
+## GUI session results (real app, same run as reviews/001 "GUI session 5")
+- Plain colon in brackets: PASS. `A[1, :] =` stays `A[1, :] = [1, 2]` and `A[:, 2] =` gives `[2; 4]`; `A:[1, 2; 3, 4] =` became `A := [1, 2; 3, 4] = [1, 2; 3, 4]`; `x:5` became `x := 5`.
+- `::` -> `≡`: FAIL (G1): `k::7` gives `k := := 7` and "Syntax error" (fix idea in 001 G1).
+- Matrix results next to input: 2x2 PASS (`[1, 2; 3, 4]·m = [1, 2; 3, 4] m` also fine, units printed once). `eye(10)` (single ~270-character line) overlaps the neighbouring region and runs off the window (G2, FAIL, spec accepts it as the up-to-10x10 rule but the GUI does not wrap). `eye(12)` shows `[12x12 matrix]` PASS.
+- Side effect to know: defining `A := [1, 2; 3, 4]` (scratch) did not affect the demo. Earlier attempt: a scratch `x := 5` made `diff(...)`/`integrate(...)` regions fail and turned `f(x) → factor` into `→ 6` (documented in 001); removed again.
+- Spec 001 table, errors, edit/move/delete, zoom and the three File dialogs: see reviews/001 (all PASS except G0 accident, G1-G5).

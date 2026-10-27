@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from PySide6.QtCore import QMarginsF, QRectF, QSettings, Qt, QTimer
+from PySide6.QtCore import QMarginsF, QRectF, QSettings, QStandardPaths, Qt, QTimer
 from PySide6.QtGui import QAction, QCloseEvent, QKeySequence, QPageLayout, QPageSize, QPainter, QPdfWriter
 from PySide6.QtWidgets import (
     QApplication,
@@ -18,6 +18,7 @@ from PySide6.QtWidgets import (
 
 from .. import __version__
 from ..document import FILE_SUFFIX, DocumentError, SheetDocument
+from .paths import default_save_path, remembered_dir
 from .regions import MathRegion
 from .worksheet import PAGE_WIDTH, Worksheet, WorksheetView
 
@@ -199,14 +200,26 @@ class MainWindow(QMainWindow):
             return self.save_file_as()
         return self._write(self.path)
 
+    def _default_save(self, suffix: str) -> Path:
+        """Suggested path for a save dialog: last used folder or Documents, never an existing file."""
+        docs = QStandardPaths.writableLocation(QStandardPaths.StandardLocation.DocumentsLocation)
+        last = self.settings.value("last_dir", "", type=str)
+        return default_save_path(self.path, last, Path(docs or Path.home()), suffix)
+
+    def _remember_dir(self, saved: Path) -> None:
+        folder = remembered_dir(saved)
+        if folder:
+            self.settings.setValue("last_dir", folder)
+
     def save_file_as(self) -> bool:
-        start = str(self.path) if self.path else str(Path.home() / f"Untitled{FILE_SUFFIX}")
+        start = str(self._default_save(FILE_SUFFIX))
         name, _ = QFileDialog.getSaveFileName(self, "Save worksheet", start, FILE_FILTER)
         if not name:
             return False
         path = Path(name)
         if path.suffix != FILE_SUFFIX:
             path = path.with_suffix(FILE_SUFFIX)
+        self._remember_dir(path)
         return self._write(path)
 
     def _write(self, path: Path) -> bool:
@@ -226,9 +239,10 @@ class MainWindow(QMainWindow):
         return True
 
     def export_pdf(self) -> None:
-        start = str(self.path.with_suffix(".pdf")) if self.path else str(Path.home() / "worksheet.pdf")
+        start = str(self._default_save(".pdf"))
         name, _ = QFileDialog.getSaveFileName(self, "Export PDF", start, "PDF (*.pdf)")
         if name:
+            self._remember_dir(Path(name))
             export_pdf(self.sheet, name)
             self.statusBar().showMessage(f"Exported {Path(name).name}", 3000)
 

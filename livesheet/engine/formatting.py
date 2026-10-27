@@ -148,3 +148,19 @@ def format_table(columns: list[str], rows: list[list[str]]) -> str:
     lines.append("  ".join("-" * w for w in widths))
     lines.extend("  ".join(c.rjust(w) for c, w in zip(row, widths)) for row in rows)
     return "\n".join(lines)
+
+
+def format_grid(rows: list[list[str]], unit: str = "") -> str:
+    """Matrix as a bracketed grid: right-aligned cells of equal column width, unit after the bracket."""
+    widths = [max(len(r[c]) for r in rows) for c in range(len(rows[0]))]
+    body = ["  ".join(cell.rjust(w) for cell, w in zip(r, widths)) for r in rows]
+    n = len(body)
+    if n == 1:
+        left, right = ["["], ["]"]
+    else:
+        left = ["⎡"] + ["⎢"] * (n - 2) + ["⎣"]
+        right = ["⎤"] + ["⎥"] * (n - 2) + ["⎦"]
+    lines = [f"{l} {b} {r}" for l, b, r in zip(left, body, right)]
+    if unit:
+        lines[-1] += " " + unit
+    return "\n".join(lines)

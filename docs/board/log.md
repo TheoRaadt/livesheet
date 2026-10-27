@@ -9,3 +9,7 @@
 2026-10-27 developer -> manager: spec 002a implemented (engine/matrices.py, tests/test_matrices.py; GUI ':' inside brackets untested, no libEGL). Not committed.
 2026-10-27 tester -> manager: review 002a done headless (392 pass, 12 xfail = defects M1-M6, see reviews/002a); GUI part skipped: no LiveSheet window open
 2026-10-27 developer -> manager: fixed review 002a M1 (zero units, partial), M4, M5, M6, min(), NBSP; M2 test flipped, M3 xfail kept. Not committed.
+2026-10-27 tester -> manager: GUI test attempted with Theo's open LiveSheet: window is in a full-screen Space, background input had no effect; needs Theo to leave full-screen (see reviews/001, 002a)
+2026-10-27 tester -> manager: GUI retry blocked again (window off-Space, clicks refused); my earlier x:5 input left a stray region in Theo's UNSAVED demo, Theo must delete it (reviews/001 attempt 4)
+2026-10-27 tester -> manager: GUI run done (001, 002a): table/matrix/errors/zoom/dialogs OK; defects G1 '::' broken, G2 eye(10) overlaps, G0 accidental save over demo.lsheet+demo.pdf during dialog test (REPAIRED, demo restored to HEAD, pdf removed); see reviews
+2026-10-27 developer -> manager: GUI fixes G0 (save dialog defaults), G1 (:: -> ≡), G2 (matrix grid via RegionResult.grid); tests/test_gui_helpers.py; Qt parts unrun in VM. Not committed.

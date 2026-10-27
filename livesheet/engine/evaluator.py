@@ -114,6 +114,8 @@ class RegionResult:
     defines: str = ""       # name defined by this region, if any
     columns: list[str] = field(default_factory=list)       # table header (table statements)
     rows: list[list[str]] = field(default_factory=list)    # table cells, one list per row
+    grid: list[list[str]] = field(default_factory=list)    # matrix result cells (not set for placeholders)
+    grid_unit: str = ""     # unit text printed after a matrix grid
 
 
 class Engine:
@@ -121,6 +123,7 @@ class Engine:
 
     def __init__(self, significant: int = 6):
         self.significant = significant
+        self._grid: tuple[list[list[str]], str] | None = None  # cells of the last matrix result
 
     # -- parsing -------------------------------------------------------------
 
@@ -193,6 +196,13 @@ class Engine:
         return results
 
     def _run(self, st: Statement, env: dict) -> RegionResult:
+        self._grid = None
+        result = self._run_statement(st, env)
+        if self._grid is not None and result.status == "ok":
+            result.grid, result.grid_unit = self._grid
+        return result
+
+    def _run_statement(self, st: Statement, env: dict) -> RegionResult:
         try:
             if st.kind == "empty":
                 return RegionResult("empty")
@@ -361,7 +371,9 @@ class Engine:
                 suffix = " " + dims_to_text(dims) if dims else ""
         else:
             cells = [self._format_measured(x, unit_text, env) for x in measured]
-        rows = [", ".join(cells[r * m.cols:(r + 1) * m.cols]) for r in range(m.rows)]
+        grid = [cells[r * m.cols:(r + 1) * m.cols] for r in range(m.rows)]
+        self._grid = (grid, suffix.strip())
+        rows = [", ".join(r) for r in grid]
         return "[" + "; ".join(rows) + "]" + suffix
 
     def _format_measured(self, meas: Measured, unit_text: str, env: dict) -> str:
@@ -395,8 +407,9 @@ class Engine:
         if m.rows > MAX_SHOWN or m.cols > MAX_SHOWN:
             return f"[{m.rows}x{m.cols} matrix]"
         cells = [format_expr(e, self.significant) for e in m]
-        rows = [", ".join(cells[r * m.cols:(r + 1) * m.cols]) for r in range(m.rows)]
-        return "[" + "; ".join(rows) + "]"
+        grid = [cells[r * m.cols:(r + 1) * m.cols] for r in range(m.rows)]
+        self._grid = (grid, "")
+        return "[" + "; ".join(", ".join(r) for r in grid) + "]"
 
     def _apply_keyword(self, value, words: list[str], env: dict):
         kw, args = words[0].lower(), words[1:]
