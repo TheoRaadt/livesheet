@@ -23,3 +23,5 @@
 - README roadmap uses `to`/`step`, not `..`
 - scipy approved (BSD-3); names vary/settle/least/most OK; 1-based indexing OK; `[NxN matrix]` placeholder >10x10 OK
 - Order: 001 -> 002a -> 003; tester verifies spec numbers first; tester opens/closes the real windows itself
+- 2026-10-27 numpy approved as direct dependency (BSD-3)
+- 2026-10-27 `f(M) := det(M)` (deferred matrix evaluation in function bodies) postponed to backlog; unit mismatch in `C := A + B` reported at display only

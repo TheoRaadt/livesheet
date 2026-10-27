@@ -5,3 +5,5 @@
 2026-10-27 developer -> manager: spec 001 implemented (engine+tests, GUI text table untested headless: libEGL missing in VM); see report. Not committed.
 2026-10-27 tester -> manager: review 001 done headless (155 pass, 8 xfail = defects D1-D5, spec numbers verified); real-app GUI run BLOCKED: Terminal only click-tier (cannot type), see docs/board/reviews/001-range-variables.md
 2026-10-27 developer -> manager: fixed review 001 defects D1,D2,D3,D5 (engine), D4 test now normal; test_gui skips when PySide6 unloadable. Not committed.
+2026-10-27 tester -> manager: rerun on 364f057 green (163 pass); GUI run still blocked: Terminal is click-tier even with full control, needs Theo to start app or a non-terminal launcher (reviews/001)
+2026-10-27 developer -> manager: spec 002a implemented (engine/matrices.py, tests/test_matrices.py; GUI ':' inside brackets untested, no libEGL). Not committed.

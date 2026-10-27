@@ -209,7 +209,9 @@ class MathRegion(Region):
             return True
         if txt == ":":
             before = self._text_before_cursor()
-            if before.endswith(":"):        # '::' typed: global definition
+            if before.count("[") > before.count("]"):
+                cursor.insertText(":")      # slice marker inside brackets, e.g. A[1, :]
+            elif before.endswith(":"):        # '::' typed: global definition
                 cursor.deletePreviousChar()
                 cursor.insertText("≡ ")
             else:

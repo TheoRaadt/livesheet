@@ -44,3 +44,8 @@ GUI checklist prepared: open demo; add `v := 3 m/s`, `t := 0 s to 10 s step 2 s`
 
 ## IP red flags
 None found in the code or tests: keywords `to`, `step`, `table`, `in` are the spec's own words; no double-dot notation, no vendor strings, no copied examples. The spec itself cites a vendor help URL (concept only); manager's IP decision on notation (open item in decisions.md) still stands. `max`/`Max` aliases etc. are generic. Not legal advice.
+
+## Update after fixes (same day)
+- Headless rerun on commit 364f057 (D1-D5 fixed by developer): 163 passed, 2 skipped, 0 failed (full suite incl. test_gui.py now collects and skips in the VM).
+- Part B second attempt: full-screen control was approved by Theo (computer_request_full_control OK). computer_resolve_access for Terminal still returns tier "click" (see and click only; no typing, no key presses, even with full control and systemKeyCombos declared). Without typing I cannot create the venv or start livesheet, so the GUI run is still NOT done. No app was launched, no window opened, no process to clean up, full control not used for any action. I did not work around the tier (no .command files, no Finder driving).
+- Needed from Theo: either start the app himself in his own Terminal (`python3 -m venv ~/livesheet-venv && ~/livesheet-venv/bin/pip install -e ~/Documents/Claude/LiveSheet/livesheet && ~/livesheet-venv/bin/livesheet ~/Documents/Claude/LiveSheet/livesheet/examples/demo.lsheet`) and then I request access to the LiveSheet/Python window (a normal GUI app should be grantable with typing), or provide a launcher app (e.g. a LiveSheet.app) that is not a terminal/IDE.

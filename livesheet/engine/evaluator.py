@@ -19,6 +19,7 @@ import math
 import re
 
 from .formatting import format_expr, format_number, format_value
+from .matrices import MATRIX_BUILTINS, rewrite_brackets, wrap
 from .syntax import Statement, StatementError, parse_statement
 from .units import BASE_UNIT_BY_DIM, UNITS, Measured, UnitError, dims_to_text, measure
 
@@ -53,11 +54,32 @@ def _builtins() -> dict:
         # constants
         "pi": sp.pi, "e": sp.E, "I": sp.I, "oo": sp.oo, "inf": sp.oo,
     })
+    for name, fn in list(g.items()):
+        if callable(fn) and name not in _UNWRAPPED:
+            g[name] = _scalar_only(name, fn)
+    g.update(MATRIX_BUILTINS)
     return g
+
+
+_ENTRYWISE_KEYWORDS = {"simplify", "expand", "factor", "together", "float", "substitute"}
+_SCALAR_KEYWORDS = {"solve", "collect", "series", "partfrac", "apart", "diff", "integrate", "limit"}
+_UNWRAPPED = {"Integer", "Float", "Rational", "Symbol", "Function"}
+
+
+def _scalar_only(name: str, fn):
+    """Scalar function that gives a worksheet error when handed a matrix."""
+    def wrapper(*args, **kwargs):
+        if any(isinstance(a, sp.MatrixBase) for a in args):
+            raise StatementError(f"{name}() does not accept a matrix")
+        return fn(*args, **kwargs)
+
+    wrapper.__name__ = name
+    return wrapper
 
 
 BUILTINS = _builtins()
 
+MAX_SHOWN = 10  # larger matrices print as a placeholder
 MAX_RANGE_VALUES = 10000
 _COUNT_TOLERANCE = 1e-9
 _IDENT_FIND_RE = re.compile(r"(?<![\w.])[^\W\d]\w*")
@@ -108,11 +130,15 @@ class Engine:
         for name in _IDENT_FIND_RE.findall(text):
             if isinstance(env.get(name), RangeVar):
                 raise StatementError(f"{name} is a range variable (use table)")
+        text = rewrite_brackets(text)
         if keep_units:  # unevaluated tree, so that e.g. ``0 s`` keeps its unit
             return self._parse_unevaluated(text, env)
         if text.count("==") == 1:
             lhs, rhs = text.split("==")
-            return sp.Eq(self.parse(lhs, env), self.parse(rhs, env))
+            left, right = self.parse(lhs, env), self.parse(rhs, env)
+            if isinstance(left, sp.MatrixBase) or isinstance(right, sp.MatrixBase):
+                raise StatementError("Cannot compare matrices with ==")
+            return sp.Eq(left, right)
         local = dict(env)
         try:
             return parse_expr(text, local_dict=local, global_dict=dict(BUILTINS),
@@ -305,10 +331,33 @@ class Engine:
             return format_expr(value, self.significant)
         if isinstance(value, (list, tuple)):
             return "{" + ", ".join(self._numeric(v, "", env) for v in value) + "}"
-        if isinstance(value, sp.MatrixBase):
-            raise StatementError("Matrices are not supported yet")
         _check_defined(value)
+        if isinstance(value, sp.MatrixBase):
+            return self._numeric_matrix(value, unit_text, env)
         return self._format_measured(measure(value), unit_text, env)
+
+    def _numeric_matrix(self, m, unit_text: str, env: dict) -> str:
+        if m.rows > MAX_SHOWN or m.cols > MAX_SHOWN:
+            return f"[{m.rows}x{m.cols} matrix]"
+        measured = [measure(e) for e in m]
+        shared = {x.dims for x in measured if x.magnitude != 0}  # a zero fits any dimension
+        suffix = ""
+        if len(shared) <= 1:
+            dims = next(iter(shared), ())
+            if unit_text:
+                target = measure(self.parse(unit_text, env))
+                if shared and target.dims != dims:
+                    raise UnitError("Units do not match: result is "
+                                    f"{dims_to_text(dims) or 'dimensionless'}")
+                cells = [format_number(x.magnitude / target.magnitude, self.significant) for x in measured]
+                suffix = " " + _unit_label(unit_text)
+            else:
+                cells = [format_number(x.magnitude, self.significant) for x in measured]
+                suffix = " " + dims_to_text(dims) if dims else ""
+        else:
+            cells = [self._format_measured(x, unit_text, env) for x in measured]
+        rows = [", ".join(cells[r * m.cols:(r + 1) * m.cols]) for r in range(m.rows)]
+        return "[" + "; ".join(rows) + "]" + suffix
 
     def _format_measured(self, meas: Measured, unit_text: str, env: dict) -> str:
         if unit_text:
@@ -333,10 +382,25 @@ class Engine:
         value = self.parse(st.expr, local)
         for words in st.keywords:
             value = self._apply_keyword(value, words, local)
+        if isinstance(value, sp.MatrixBase):
+            return self._symbolic_matrix(value)
         return format_value(value, self.significant)
+
+    def _symbolic_matrix(self, m) -> str:
+        if m.rows > MAX_SHOWN or m.cols > MAX_SHOWN:
+            return f"[{m.rows}x{m.cols} matrix]"
+        cells = [format_expr(e, self.significant) for e in m]
+        rows = [", ".join(cells[r * m.cols:(r + 1) * m.cols]) for r in range(m.rows)]
+        return "[" + "; ".join(rows) + "]"
 
     def _apply_keyword(self, value, words: list[str], env: dict):
         kw, args = words[0].lower(), words[1:]
+        if isinstance(value, sp.MatrixBase):
+            if kw not in _ENTRYWISE_KEYWORDS:
+                if kw in _SCALAR_KEYWORDS:
+                    raise StatementError(f"'{kw}' does not apply to matrices")
+                raise StatementError(f"Unknown keyword '{kw}'")
+            return wrap(value.rows, value.cols, [self._apply_keyword(e, words, env) for e in value])
 
         def sym(i, default=None):
             if len(args) > i:
