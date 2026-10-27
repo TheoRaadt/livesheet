@@ -49,3 +49,19 @@ None. Keywords `vary`, `settle`, `least`, `most`, `accuracy`, `steps`, `in <mode
 ## Decisions for the manager
 - Ask the developer to fix S1 and S2 before Phase B (both strongly affect first-time use), S3 and S4 are quick.
 - Decide whether the guess-scaled "closest point" semantics should be explained in the user docs.
+
+## Fix round (developer, b7beb0f) and headless recheck
+Full suite on b7beb0f: 539 passed, 3 skipped, 1 xfailed (older, not 003). S1-S4 fixed by the developer (no xfail left in tests/test_solve_blackbox.py); the message now says "function evaluations".
+
+## GUI check on b7beb0f (tester, 2026-10-27, real app, demo.lsheet open, nothing saved)
+PASS:
+- Fall-time example typed region by region (`vary t from 1 s in fall`, `h2 := 20 m` (h is already 200 mm in the demo), `0.5*g*t^2 == h2 in fall`, `settle in fall`, `t =`): result `⇒ t = 2.01962 s` shown right of the result region, blue; `t = 2.01962 s` below. The vary region alone shows red `No result region for model "fall" below this region` until the result region exists.
+- Typing `vary`, `==`, `≥` (unicode), `in fall`, `in b1` is kept as typed; `x:5` becomes `x := 5` next to model regions. Note: typed `<=` is displayed as `≤` (pretty-printing); the stored source text was not inspected.
+- Errors shown red with warning sign, on the result region: `Units do not match in constraint "d == 3 s"`; `No solution found: closest point violates "w^2 == -4" by 8.0e-01`; `Not converged: stopped after 5 function evaluations (steps limit 1), largest violation 2.5e-01 (try another starting guess or raise steps)`; `Inequality constraints are not available yet` (Phase B interim). A wrong unit on the guess (`1 m`) turns the result region red (`Units do not match in constraint "0.5*g*t^2 == h2"`) and `t =` red (`t is not defined`); restoring `1 s` heals both.
+- Dependants: editing `h2 := 20 m` to `40 m` updates the result to `t = 2.85617 s` (both regions) immediately.
+- Failing solves (no solution, not converged) return instantly; the window never froze.
+- 10-unknown under-determined solve (`vary a1 from 1, ... a10 from 10 in L1`, `a1+...+a10 == 100`) works: `⇒ a1 = 1.11688, a2 = 2.46753, ...`.
+OBSERVATIONS / OPEN:
+- G3 (layout, minor): long result and error lines are not wrapped; the 10-unknown result line and the Not-converged message run past the right window edge and the canvas gets a horizontal scrollbar. Nothing overlaps neighbours vertically (one text line), but the end of the result cannot be read without horizontal scrolling. Same class as the wide-grid finding in review 001.
+- G4 (CRASH or quit, UNCONFIRMED, high priority to reproduce): after the above, I selected the `settle in fall` result region (single click, region frame shown) and pressed Backspace to delete it. The window stayed one more frame, then the LiveSheet process was gone (computer_list_apps: org.python.python not running; app_menu "app not running"). I did not quit the app. Code path: worksheet.keyPressEvent -> remove_regions (removeItem + deleteLater + schedule_recalc). The engine side is fine (headless run of the same sheet without the result region gives only `t is not defined`). I could not see a traceback (Terminal not granted). Possible cause: deleting a result region of a model while its dependants are re-evaluated; or something unrelated (e.g. Theo closed it). Needs a repeat: select `settle in fall` and delete it.
+NOT CHECKED (app ended): deleting the vary region / result region and the resulting messages, source text after `<=`, Save As / Export dialogs (not touched, nothing written), zoom (never changed, 100%). Scratch regions were lost with the process; demo.lsheet was never saved, git status is clean (examples/ untouched).

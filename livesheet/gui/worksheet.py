@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import shiboken6
 from PySide6.QtCore import QPointF, QRectF, Qt, QTimer, Signal
 from PySide6.QtGui import QColor, QKeyEvent, QPainter, QPen, QWheelEvent
 from PySide6.QtWidgets import QGraphicsItem, QGraphicsScene, QGraphicsView
@@ -46,6 +47,7 @@ class Worksheet(QGraphicsScene):
         self.addItem(self.crosshair)
         self.crosshair.setPos(GRID * 4, GRID * 4)
         self._modified = False
+        self._discarded: list[Region] = []   # removed regions waiting for their single deletion
         self.printing = False  # suppress grid/page edge while exporting
         self._timer = QTimer(self)
         self._timer.setSingleShot(True)
@@ -116,16 +118,45 @@ class Worksheet(QGraphicsScene):
         if not regions:
             return
         for r in regions:
-            self.removeItem(r)
-            r.deleteLater()
+            self._discard(r)
         self.set_modified()
         self.schedule_recalc()
         self._update_rect()
 
+    def _discard(self, region: Region) -> None:
+        """Take a region out of the scene and destroy it exactly once, at a safe moment.
+
+        Selection, focus and editing are cleared first, the signals are cut, and the item is
+        hidden and removed. The Python wrapper then owns it (no deleteLater, so there is a single
+        owner) and the C++ object is deleted from a zero-delay timer, never while the view may
+        still be painting or while this region's own signal is being emitted.
+        """
+        if region.scene() is not self:
+            return
+        region.abort_editing()
+        for signal in (region.contentChanged, region.editingFinished, region.moved):
+            try:
+                signal.disconnect()
+            except (RuntimeError, TypeError):
+                pass
+        region.setSelected(False)
+        focus = self.focusItem()
+        if focus is not None and (focus is region or region.isAncestorOf(focus)):
+            focus.clearFocus()
+        region.hide()
+        self.removeItem(region)
+        self._discarded.append(region)
+        QTimer.singleShot(0, self._destroy_discarded)
+
+    def _destroy_discarded(self) -> None:
+        discarded, self._discarded = self._discarded, []
+        for region in discarded:
+            if shiboken6.isValid(region):
+                shiboken6.delete(region)
+
     def clear_sheet(self) -> None:
         for r in self.regions():
-            self.removeItem(r)
-            r.deleteLater()
+            self._discard(r)
         self.crosshair.setPos(GRID * 4, GRID * 4)
         self.crosshair.show()
         self._update_rect()
@@ -179,8 +210,7 @@ class Worksheet(QGraphicsScene):
 
     def _on_editing_finished(self, region: Region, move_below: bool) -> None:
         if region.is_empty():
-            self.removeItem(region)
-            region.deleteLater()
+            self._discard(region)
         elif move_below:
             rect = region.sceneBoundingRect()
             self.crosshair.setPos(region.pos().x(), snap(rect.bottom() + 2 * GRID))

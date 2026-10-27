@@ -9,6 +9,7 @@ scipy is imported lazily so that the GUI starts without it.
 from __future__ import annotations
 
 import math
+import re
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING
 
@@ -40,6 +41,19 @@ class Constraint:
     left: object            # callables of the scaled unknowns -> SI magnitude
     right: object
     ref: float              # |l0| + |r0| at the guess (1 when zero)
+    op: str = "=="          # == | <= | >=  (strict < and > are treated as non-strict)
+    owner: int = 0          # index of the declaring region in the model's region list
+    grad: object = None     # callable: scaled unknowns -> gradient of the gap (SI), or None
+
+
+@dataclass
+class Objective:
+    source: str
+    func: object            # callable of the scaled unknowns -> SI magnitude
+    scale: float            # |value at the guess| (1 when zero)
+    sign: float             # +1 minimise, -1 maximise
+    dims: tuple
+    grad: object = None     # callable: scaled unknowns -> gradient of the magnitude, or None
 
 
 @dataclass
@@ -52,6 +66,16 @@ class Settings:
 class Solution:
     unknowns: list[Unknown]
     values: list[float]     # SI magnitudes
+    objective: tuple[float, tuple] | None = None   # (SI magnitude, dims) for least / most
+    constraints: list[Constraint] = field(default_factory=list)
+
+
+class SolveError(StatementError):
+    """Solver failure; ``owner`` is the region index of the worst violated constraint (or -1)."""
+
+    def __init__(self, message: str, owner: int = -1):
+        super().__init__(message)
+        self.owner = owner
 
 
 def _unit_expr(dims: tuple) -> sp.Expr:
@@ -104,52 +128,95 @@ def declare(engine: "Engine", model: str, regions: list[Statement], env: dict) -
     return unknowns
 
 
-def build_constraints(engine: "Engine", regions: list[Statement], unknowns: list[Unknown],
-                      env: dict) -> list[Constraint]:
+def _relation_parts(src: str) -> tuple[str, str, str]:
+    mt = re.search(r"==|<=|>=|<|>", src)
+    op = {"<": "<=", ">": ">="}.get(mt.group(0), mt.group(0))
+    return src[:mt.start()], op, src[mt.end():]
+
+
+def _checked(engine: "Engine", text: str, local: dict, zs: list, what: str):
+    """Parse ``text``; every free name must be an unknown or defined, and units must be consistent."""
+    value = engine.parse(text, local)
+    if isinstance(value, sp.MatrixBase):
+        raise StatementError(f'{what} "{text.strip()}" must be scalar')
+    return value
+
+
+def _undefined(exprs, zs) -> None:
+    free = set().union(*(e.free_symbols for e in exprs))
+    undefined = sorted({str(x) for x in free if x not in zs}
+                       | {f.func.__name__ for e in exprs for f in e.atoms(AppliedUndef)})
+    if undefined:
+        names = ", ".join(undefined)
+        raise StatementError(f"{names} {'is' if len(undefined) == 1 else 'are'} not defined")
+
+
+def _local_env(unknowns: list[Unknown], env: dict) -> dict:
     local = dict(env)
     for u in unknowns:
         local[u.name] = u.scale * u.symbol * _unit_expr(u.dims)
+    return local
+
+
+def _eval_start(fn, start, what: str) -> float:
+    try:
+        value = _scalar(fn(*start))
+    except (ArithmeticError, ValueError, TypeError) as exc:
+        raise StatementError(f"Cannot evaluate at the starting guess: {exc}") from None
+    if not math.isfinite(value):
+        raise StatementError("Cannot evaluate at the starting guess: result is not finite")
+    return value
+
+
+def build_constraints(engine: "Engine", regions: list[Statement], unknowns: list[Unknown],
+                      env: dict) -> list[Constraint]:
+    local = _local_env(unknowns, env)
     zs = [u.symbol for u in unknowns]
     start = [u.start for u in unknowns]
     out: list[Constraint] = []
-    for st in regions:
+    for index, st in enumerate(regions):
         if st.kind != "model_require":
             continue
         for src in st.relations:
-            if "==" not in src:
-                raise StatementError("Inequality constraints are not available yet")
-            lhs, rhs = src.split("==", 1)
-            left, right = engine.parse(lhs, local), engine.parse(rhs, local)
-            for side in (left, right):
-                if isinstance(side, sp.MatrixBase):
-                    raise StatementError(f'Constraint "{src}" must be scalar')
-            free = (left.free_symbols | right.free_symbols)
-            undefined = sorted({str(x) for x in free if x not in zs}
-                               | {f.func.__name__ for e in (left, right) for f in e.atoms(AppliedUndef)})
-            if undefined:
-                names = ", ".join(undefined)
-                raise StatementError(f"{names} {'is' if len(undefined) == 1 else 'are'} not defined")
-            if not (free & set(zs)):
+            lhs, op, rhs = _relation_parts(src)
+            left, right = _checked(engine, lhs, local, zs, "Constraint"), _checked(engine, rhs, local, zs, "Constraint")
+            _undefined([left, right], zs)
+            if not ((left.free_symbols | right.free_symbols) & set(zs)):
                 raise StatementError(f'Constraint "{src}" does not involve any unknown')
             try:
                 ml, mr = measure(left), measure(right)
             except UnitError as exc:
                 raise UnitError(f'Units do not match in constraint "{src}" ({exc})') from None
-            if ml.dims != mr.dims:
+            if ml.dims != mr.dims and not (left == 0 or right == 0):   # a plain 0 fits any dimension
                 raise UnitError(f'Units do not match in constraint "{src}"')
             lf = sp.lambdify(zs, ml.magnitude, modules=["numpy"])
             rf = sp.lambdify(zs, mr.magnitude, modules=["numpy"])
-            try:
-                l0, r0 = _scalar(lf(*start)), _scalar(rf(*start))
-            except (ArithmeticError, ValueError, TypeError) as exc:
-                raise StatementError(f"Cannot evaluate at the starting guess: {exc}") from None
-            if not (math.isfinite(l0) and math.isfinite(r0)):
-                raise StatementError("Cannot evaluate at the starting guess: result is not finite")
-            ref = abs(l0) + abs(r0)
-            out.append(Constraint(src, lf, rf, ref if ref > 0 else 1.0))
-    if not out:
-        raise StatementError("No constraints declared for this model")
+            ref = abs(_eval_start(lf, start, src)) + abs(_eval_start(rf, start, src))
+            gap = (mr.magnitude - ml.magnitude) if op == ">=" else (ml.magnitude - mr.magnitude)
+            out.append(Constraint(src, lf, rf, ref if ref > 0 else 1.0, op, index, _gradient(zs, gap)))
     return out
+
+
+def build_objective(engine: "Engine", st: Statement, unknowns: list[Unknown], env: dict) -> Objective:
+    local = _local_env(unknowns, env)
+    zs = [u.symbol for u in unknowns]
+    expr = _checked(engine, st.expr, local, zs, "Objective")
+    _undefined([expr], zs)
+    if not (expr.free_symbols & set(zs)):
+        raise StatementError(f'Objective "{st.expr}" does not involve any unknown')
+    meas = measure(expr)
+    func = sp.lambdify(zs, meas.magnitude, modules=["numpy"])
+    f0 = _eval_start(func, [u.start for u in unknowns], st.expr)
+    return Objective(st.expr, func, abs(f0) if f0 != 0 else 1.0, 1.0 if st.goal == "min" else -1.0,
+                     meas.dims, _gradient(zs, meas.magnitude))
+
+
+def _gradient(zs: list, expr):
+    """Exact gradient as a callable (or ``None`` when SymPy cannot differentiate the expression)."""
+    try:
+        return sp.lambdify(zs, [sp.diff(expr, z) for z in zs], modules=["numpy"])
+    except Exception:  # noqa: BLE001 - finite differences are the fallback
+        return None
 
 
 def _scalar(x) -> float:
@@ -159,32 +226,52 @@ def _scalar(x) -> float:
     return value.real
 
 
+def _gap(c: Constraint, z) -> float:
+    """Signed gap in SI: zero for a satisfied equality, <= 0 for a satisfied inequality."""
+    d = _scalar(c.left(*z)) - _scalar(c.right(*z))
+    return -d if c.op == ">=" else d
+
+
 def _residuals(constraints: list[Constraint], z):
     import numpy as np
 
     out = []
     for c in constraints:
         try:
-            out.append((_scalar(c.left(*z)) - _scalar(c.right(*z))) / c.ref)
+            out.append(_gap(c, z) / c.ref)
         except (ArithmeticError, ValueError, TypeError):
             out.append(float("nan"))
     return np.array(out, dtype=float)
 
 
-def _violations(constraints: list[Constraint], z, tol: float) -> list[tuple[float, str]]:
-    """(normalised violation, source) for every constraint; <= tol means satisfied."""
+def _violations(constraints: list[Constraint], z) -> list[tuple[float, str, int]]:
+    """(normalised violation, source, owner) per constraint; <= accuracy means satisfied."""
     result = []
     for c in constraints:
         try:
             l, r = _scalar(c.left(*z)), _scalar(c.right(*z))
-            scale = max(abs(l), abs(r), c.ref)
-            result.append((abs(l - r) / scale, c.source))
+            gap = _gap(c, z)
+            raw = abs(gap) if c.op == "==" else max(0.0, gap)
+            result.append((raw / max(abs(l), abs(r), c.ref), c.source, c.owner))
         except (ArithmeticError, ValueError, TypeError):
-            result.append((float("inf"), c.source))
+            result.append((float("inf"), c.source, c.owner))
     return result
 
 
-def settle(engine: "Engine", model: str, regions: list[Statement], env: dict) -> Solution:
+def _strict(constraints: list[Constraint], z) -> list[float]:
+    out = []
+    for c in constraints:
+        try:
+            gap = _gap(c, z)
+            out.append((abs(gap) if c.op == "==" else max(0.0, gap)) / c.ref)
+        except (ArithmeticError, ValueError, TypeError):
+            out.append(float("inf"))
+    return out
+
+
+def settle(engine: "Engine", model: str, regions: list[Statement], env: dict,
+           goal: Statement | None = None) -> Solution:
+    """Solve the model: ``goal`` is the least/most result statement (``None`` for settle)."""
     import warnings
 
     try:
@@ -194,7 +281,7 @@ def settle(engine: "Engine", model: str, regions: list[Statement], env: dict) ->
         raise StatementError("Solving needs the scipy package") from None
     with np.errstate(all="ignore"), warnings.catch_warnings():
         warnings.simplefilter("ignore")
-        return _settle(engine, model, regions, env)
+        return _solve(engine, model, regions, env, goal)
 
 
 def _starts(z0):
@@ -211,76 +298,134 @@ def _starts(z0):
         yield -base * 10.0 ** k
 
 
-def _attempt(optimize, np, constraints, z0, start, settings):
-    """One solver run from ``start``; returns (z, evaluations used, hit the step limit)."""
-    n_eq, n = len(constraints), len(z0)
+def _jacobian(np, group: list, z):
+    return np.array([[float(g) for g in c.grad(*z)] for c in group], dtype=float) / \
+        np.array([[c.ref] for c in group], dtype=float)
 
-    def fun(z):
-        return _residuals(constraints, z)
 
-    if n_eq == n:
-        res = optimize.root(fun, start, method="hybr", tol=1e-14, options={"maxfev": settings.steps})
-        return res.x, int(res.nfev), res.status == 2 or (not res.success and res.nfev >= settings.steps)
-    if n_eq > n:
-        res = optimize.least_squares(fun, start, xtol=1e-15, ftol=1e-15, gtol=1e-15, max_nfev=settings.steps)
-        return res.x, int(res.nfev), res.status == 0
-    res = optimize.minimize(lambda z: float(np.sum((z - z0) ** 2)), start, method="SLSQP",
-                            jac=lambda z: 2 * (z - z0),
-                            constraints=[{"type": "eq", "fun": fun}],
+def _attempt(optimize, np, constraints, objective, z0, start, settings, exact=True):
+    """One run from ``start``: (z, evaluations used, hit the step limit, optimiser reported success)."""
+    eqs = [c for c in constraints if c.op == "=="]
+    ineqs = [c for c in constraints if c.op != "=="]
+    n = len(z0)
+
+    def eq_fun(z):
+        return _residuals(eqs, z)
+
+    if objective is None and not ineqs and eqs:
+        if len(eqs) == n:
+            res = optimize.root(eq_fun, start, method="hybr", tol=1e-14, options={"maxfev": settings.steps})
+            return res.x, int(res.nfev), res.status == 2 or (not res.success and res.nfev >= settings.steps), True
+        if len(eqs) > n:
+            res = optimize.least_squares(eq_fun, start, xtol=1e-15, ftol=1e-15, gtol=1e-15,
+                                         max_nfev=settings.steps)
+            return res.x, int(res.nfev), res.status == 0, True
+    cons = []
+    use = exact and all(c.grad is not None for c in constraints)
+    if eqs:
+        cons.append({"type": "eq", "fun": eq_fun})
+        if use:
+            cons[-1]["jac"] = lambda z: _jacobian(np, eqs, z)
+    if ineqs:
+        cons.append({"type": "ineq", "fun": lambda z: -_residuals(ineqs, z)})
+        if use:
+            cons[-1]["jac"] = lambda z: -_jacobian(np, ineqs, z)
+    if objective is None:
+        fun, jac = (lambda z: float(np.sum((z - z0) ** 2))), (lambda z: 2 * (z - z0))
+    else:
+        def fun(z):
+            return float(objective.sign * _scalar(objective.func(*z)) / objective.scale)
+
+        jac = None
+        if exact and objective.grad is not None:
+            def jac(z):
+                return objective.sign * np.array([float(g) for g in objective.grad(*z)]) / objective.scale
+    res = optimize.minimize(fun, start, method="SLSQP", jac=jac, constraints=cons,
                             options={"maxiter": settings.steps, "ftol": 1e-16})
-    return _polish(constraints, res.x, fun), int(res.nit), res.status == 9
+    for _ in range(3):          # restarting from the result tightens active-constraint solutions
+        if res.status != 0:
+            break
+        again = optimize.minimize(fun, res.x, method="SLSQP", jac=jac, constraints=cons,
+                                  options={"maxiter": settings.steps, "ftol": 1e-16})
+        if again.status != 0 or not np.isfinite(again.fun) or again.fun > res.fun + 1e-12:
+            break
+        res = again
+    z = res.x
+    if objective is None and not ineqs:
+        z = _polish(z, eq_fun)
+    return z, int(res.nit), res.status == 9, res.status == 0
 
 
-def _strict(constraints, z) -> list[float]:
-    out = []
-    for c in constraints:
-        try:
-            out.append(abs(_scalar(c.left(*z)) - _scalar(c.right(*z))) / c.ref)
-        except (ArithmeticError, ValueError, TypeError):
-            out.append(float("inf"))
-    return out
-
-
-def _worst(constraints, z, tol):
-    viol = _violations(constraints, z, tol)
+def _worst(constraints, z):
+    viol = _violations(constraints, z)
+    if not viol:
+        return 0.0, "", -1
     return max(viol, key=lambda v: (v[0] if math.isfinite(v[0]) else float("inf")))
 
 
-def _settle(engine: "Engine", model: str, regions: list[Statement], env: dict) -> Solution:
+def _solve(engine: "Engine", model: str, regions: list[Statement], env: dict, goal) -> Solution:
     from scipy import optimize
     import numpy as np
 
     unknowns = declare(engine, model, regions, env)
     settings = read_settings(engine, regions, env)
     constraints = build_constraints(engine, regions, unknowns, env)
+    objective = build_objective(engine, goal, unknowns, env) if goal is not None else None
+    if not constraints and objective is None:
+        raise StatementError("No constraints declared for this model")
     z0 = np.array([u.start for u in unknowns], dtype=float)
-    best = None            # (worst violation, source, z)
+    best = None            # (worst violation, source, owner, z)
     first = None           # (evaluations used, hit the step limit) of the run from the guess
-    first_run = True
-    for start in _starts(z0):
-        z, used, limit = _attempt(optimize, np, constraints, z0, start, settings)
+    message = ""
+    for k, start in enumerate(_starts(z0)):
+        try:
+            try:
+                z, used, limit, ok = _attempt(optimize, np, constraints, objective, z0, start, settings)
+                if not np.all(np.isfinite(z)):
+                    raise ValueError("non-finite result")
+            except (ArithmeticError, ValueError, TypeError):   # e.g. a bad exact gradient: use differences
+                z, used, limit, ok = _attempt(optimize, np, constraints, objective, z0, start, settings, False)
+        except (ArithmeticError, ValueError, TypeError):
+            z, used, limit, ok = start, 0, False, False
         if first is None:
             first = (used, limit)
-        worst, source = _worst(constraints, z, settings.accuracy)
-        if first_run:
-            first_run = False
-        else:
+        worst, source, owner = _worst(constraints, z)
+        if k > 0 and constraints:
             # a retried start must satisfy the stricter test relative to the guess scale only,
             # otherwise huge values would pass the relative rule trivially (x == x + 1 at x = 1e12)
             worst = max(_strict(constraints, z))
-        if worst <= settings.accuracy:
-            return Solution(unknowns, [float(zi) * u.scale for zi, u in zip(z, unknowns)])
+        feasible = worst <= settings.accuracy
+        if feasible and (objective is None or ok):
+            value = None
+            if objective is not None:
+                value = (_scalar(objective.func(*z)), objective.dims)
+            return Solution(unknowns, _clean([float(zi) * u.scale for zi, u in zip(z, unknowns)], unknowns),
+                            value, constraints)
+        if feasible and objective is not None:
+            worst, source, owner = float("inf"), "", -1   # feasible, but no optimum reported
         if best is None or worst < best[0] or not math.isfinite(best[0]):
-            best = (worst, source, z)
-    worst, source, _ = best
+            best = (worst, source, owner, z)
+    worst, source, owner, _ = best
     if first[1]:
-        raise StatementError(f"Not converged: stopped after {first[0]} function evaluations "
-                             f"(steps limit {settings.steps}), largest violation {worst:.1e} "
-                             "(try another starting guess or raise steps)")
-    raise StatementError(f'No solution found: closest point violates "{source}" by {worst:.1e}')
+        raise SolveError(f"Not converged: stopped after {first[0]} function evaluations "
+                         f"(steps limit {settings.steps}), largest violation {worst:.1e} "
+                         "(try another starting guess or raise steps)", owner)
+    if not math.isfinite(worst) and not source:
+        raise SolveError("No solution found: the objective has no optimum within the constraints "
+                         "(unbounded or the solver did not converge)")
+    raise SolveError(f'No solution found: closest point violates "{source}" by {worst:.1e}', owner)
 
 
-def _polish(constraints, z, fun):
+def _clean(values: list[float], unknowns: list[Unknown]) -> list[float]:
+    """Round-off such as 5e-17 next to an unknown of 2 (same dimension) is reported as 0."""
+    out = []
+    for v, u in zip(values, unknowns):
+        peers = [abs(w) for w, o in zip(values, unknowns) if o.dims == u.dims]
+        out.append(0.0 if len(peers) > 1 and abs(v) <= 1e-12 * max(peers) else v)
+    return out
+
+
+def _polish(z, fun):
     """A few Gauss-Newton steps onto the constraint surface (minimum-norm correction)."""
     import numpy as np
 

@@ -386,7 +386,8 @@ def test_unknown_shadows_existing_names_inside_model_only():
 def test_unicode_relations_and_text():
     for rel in ("≤", "≥"):
         r = last("vary x from 1 in a", f"x {rel} 3 in a", "settle in a")
-        assert r.status == "error" and "not available yet" in r.error or r.status == "ok"
+        # `x <= 3` holds at the guess 1; `x >= 3` moves to the closest feasible point 3
+        assert r.status == "ok" and r.output == ("⇒ x = 1" if rel == "≤" else "⇒ x = 3")
     assert parse_statement("0 ≤ x ≤ 3 in p").relations == ["0 <= x", "x <= 3"]
     assert last("vary x from 1 in α", "x == 2 in α", "settle in α").output == "⇒ x = 2"
     assert last("vary x from 1 in a", "x² == 9 in a", "settle in a").output == "⇒ x = 3"
@@ -396,12 +397,12 @@ def test_unicode_relations_and_text():
     assert last("vary x from 1 in a", "x == −3 in a", "settle in a").output == "⇒ x = -3"
 
 
-def test_phase_b_features_report_interim_error_not_crash():
+def test_phase_b_features_no_longer_report_interim_error():
     for srcs in (["vary x from 0 in i", "x > 0 in i", "x^2 == 4 in i", "settle in i"],
                  ["vary x from 0 in i", "x <= 1 in i", "settle in i"],
-                 ["vary x from 0 in i", "least x^2 in i"], ["vary x from 0 in i", "most x in i"]):
+                 ["vary x from 0 in i", "least x^2 in i"], ["vary x from 0 in i", "most -x^2 in i"]):
         r = last(*srcs)
-        assert r.status == "error" and "not available yet" in r.error
+        assert "not available yet" not in r.error and r.status in ("ok", "error")
 
 
 def test_relation_forms_and_malformed_regions():
@@ -420,7 +421,7 @@ def test_relation_forms_and_malformed_regions():
 def test_constraint_outputs_of_non_result_regions():
     r = run("vary x from 1, y from 2 in p", "x + y == 3 in p", "accuracy 1e-6 in p", "steps 50 in p", "settle in p")
     for x in r[:4]:
-        assert x.status == "ok" and x.output == "" and x.defines == ""
+        assert x.status == "ok" and x.output in ("", "✓") and x.defines == ""   # ✓ mark: spec 003 criterion 17
     assert r[4].output.startswith("⇒ ") and r[4].defines == ""
 
 

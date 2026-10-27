@@ -100,3 +100,103 @@ def test_gui_shows_matrix_grid_and_colon_keys():
     finally:
         win.sheet.set_modified(False)
         win.close()
+
+
+def _qt_window():
+    os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
+    try:
+        from PySide6.QtWidgets import QApplication
+
+        from livesheet.gui.main_window import MainWindow
+    except ImportError as exc:  # e.g. missing system GL libraries
+        pytest.skip(f"Qt not usable here: {exc}")
+    app = QApplication.instance() or QApplication([])
+    win = MainWindow()
+    win.resize(900, 700)
+    win.show()
+    app.processEvents()
+    return app, win
+
+
+def _settle(app, win):
+    """Let queued events (including deferred destruction) run, then render the view again."""
+    from PySide6.QtTest import QTest
+
+    app.processEvents()
+    QTest.qWait(50)
+    win.view.grab()
+    app.processEvents()
+
+
+MODEL = [
+    ("vary t from 1 s in fall", 40, 40),
+    ("h := 20 m", 40, 90),
+    ("0.5*g*t^2 == h in fall", 40, 140),
+    ("settle in fall", 40, 190),
+    ("t =", 40, 240),
+]
+
+
+def test_deleting_solve_regions_does_not_crash_the_view():
+    """Regression for G4: SIGSEGV in QGraphicsView::paintEvent after deleting a selected result region."""
+    app, win = _qt_window()
+    from PySide6.QtCore import QEvent, QPointF, Qt
+    from PySide6.QtGui import QKeyEvent
+    from PySide6.QtTest import QTest
+
+    try:
+        sheet = win.sheet
+        regions = {text: sheet.add_region("math", QPointF(x, y), text) for text, x, y in MODEL}
+        sheet.recalculate()
+        _settle(app, win)
+        assert regions["settle in fall"].result.output.startswith("⇒ t = 2.0196")
+
+        # 1. select the result region and press Backspace through the scene's key handler
+        result = regions["settle in fall"]
+        sheet.clearSelection()
+        result.setSelected(True)
+        app.processEvents()
+        win.view.grab()
+        app.sendEvent(sheet, QKeyEvent(QEvent.Type.KeyPress, Qt.Key.Key_Backspace, Qt.KeyboardModifier.NoModifier))
+        _settle(app, win)
+        assert result not in sheet.regions()
+
+        # 2. delete a declaration region through the menu action path
+        vary = regions["vary t from 1 s in fall"]
+        vary.setSelected(True)
+        win.delete_selected()
+        _settle(app, win)
+        assert vary not in sheet.regions()
+
+        # 3. delete while a region is being edited, then everything else
+        edited = regions["h := 20 m"]
+        edited.start_editing()
+        sheet.remove_regions([edited])
+        _settle(app, win)
+        sheet.remove_regions(sheet.regions())
+        _settle(app, win)
+        assert sheet.regions() == []
+        QTest.qWait(50)
+    finally:
+        win.sheet.set_modified(False)
+        win.close()
+
+
+def test_add_and_delete_cycles_with_results_keep_rendering():
+    app, win = _qt_window()
+    from PySide6.QtCore import QPointF
+
+    try:
+        sheet = win.sheet
+        for round_ in range(15):
+            made = [sheet.add_region("math", QPointF(x, y + 300 * 0), text) for text, x, y in MODEL]
+            sheet.recalculate()
+            _settle(app, win)
+            sheet.remove_regions(made if round_ % 2 else list(reversed(made)))
+            _settle(app, win)
+        sheet.clear_sheet()
+        _settle(app, win)
+        assert sheet.regions() == []
+    finally:
+        win.sheet.set_modified(False)
+        win.close()

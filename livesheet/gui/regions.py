@@ -95,6 +95,8 @@ class Region(QGraphicsObject):
         return r.adjusted(-PAD, -PAD, PAD, PAD) | QRectF(0, 0, 2 * PAD + 8, 2 * PAD + 8)
 
     def paint(self, painter: QPainter, option: QStyleOptionGraphicsItem, widget=None) -> None:
+        if self.scene() is None:
+            return
         rect = self.boundingRect().adjusted(0.5, 0.5, -0.5, -0.5)
         if self.editing:
             painter.fillRect(rect, COLOR_EDIT_BG)
@@ -142,6 +144,15 @@ class Region(QGraphicsObject):
         self._leave_edit_display()
         self._relayout()
         self.editingFinished.emit(self, move_below)
+
+    def abort_editing(self) -> None:
+        """Leave edit mode without emitting signals (used right before the region is discarded)."""
+        if not self.editing:
+            return
+        self.editing = False
+        self.editor.clearFocus()
+        self.editor.setTextInteractionFlags(Qt.TextInteractionFlag.NoTextInteraction)
+        self.editor.setAcceptedMouseButtons(Qt.MouseButton.NoButton)
 
     def handle_key(self, event: QKeyEvent) -> bool:
         """Return True when the key was handled here."""

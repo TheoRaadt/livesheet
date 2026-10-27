@@ -204,18 +204,18 @@ class Engine:
             if st is None or _is_global(st):
                 continue
             if st.kind.startswith("model_"):
-                results[key] = self._run_model(st, pos, env, earlier, last_result, broken_models)
+                results[key] = self._run_model(st, pos, key, env, earlier, last_result, broken_models, results)
                 continue
             results[key] = self._run(st, env)
         return results
 
-    def _run_model(self, st: Statement, pos: int, env: dict, earlier: dict, last_result: dict,
-                   broken: dict) -> RegionResult:
+    def _run_model(self, st: Statement, pos: int, key, env: dict, earlier: dict, last_result: dict,
+                   broken: dict, results: dict) -> RegionResult:
         try:
             if st.kind != "model_result":
                 if last_result.get(st.model, -1) <= pos:
                     raise StatementError(f'No result region for model "{st.model}" below this region')
-                earlier.setdefault(st.model, []).append(st)
+                earlier.setdefault(st.model, []).append((key, st))
                 if st.kind == "model_require":
                     try:
                         for rel in st.relations:
@@ -227,14 +227,18 @@ class Engine:
                 if st.kind == "model_setting":
                     solver.check_setting(self, st, env)
                 return RegionResult("ok")
-            if st.goal != "root":
-                raise StatementError("least and most are not available yet")
             if broken.get(st.model):
                 raise StatementError(f'Fix the errors in the regions of model "{st.model}" first')
-            regions = earlier.get(st.model, [])
-            if not regions:
+            members = earlier.get(st.model, [])
+            if not members:
                 raise StatementError(f'No unknowns declared for model "{st.model}"')
-            solution = solver.settle(self, st.model, regions, env)
+            keys, regions = [k for k, _ in members], [m for _, m in members]
+            try:
+                solution = solver.settle(self, st.model, regions, env, st if st.goal != "root" else None)
+            except solver.SolveError as exc:
+                self._mark(results, keys, regions, "✗", exc.owner)
+                raise
+            self._mark(results, keys, regions, "✓", None)
             return RegionResult("ok", self._solution_text(solution, env))
         except (StatementError, UnitError) as exc:
             return RegionResult("error", error=str(exc))
@@ -242,12 +246,26 @@ class Engine:
             msg = str(exc).strip().splitlines()[0] if str(exc).strip() else type(exc).__name__
             return RegionResult("error", error=msg[:160])
 
+    @staticmethod
+    def _mark(results: dict, keys: list, regions: list, mark: str, only: int | None) -> None:
+        """Constraint status marks: ``✓`` on all constraint regions, or ``✗`` on the worst one."""
+        for i, (key, st) in enumerate(zip(keys, regions)):
+            if st.kind == "model_require" and key in results and results[key].status == "ok":
+                if only is None:
+                    results[key].output = mark
+                elif i == only:
+                    results[key].output = mark
+
     def _solution_text(self, solution, env: dict) -> str:
         parts = []
         for u, value in zip(solution.unknowns, solution.values):
             parts.append(f"{u.name} = " + self._format_measured(Measured(sp.Float(value), u.dims), "", env))
             env[u.name] = sp.Float(value) * solver._unit_expr(u.dims)
-        return "⇒ " + ", ".join(parts)
+        text = "⇒ " + ", ".join(parts)
+        if solution.objective is not None:
+            value, dims = solution.objective
+            text += "; value = " + self._format_measured(Measured(sp.Float(value), dims), "", env)
+        return text
 
     def _run(self, st: Statement, env: dict) -> RegionResult:
         self._grid = None

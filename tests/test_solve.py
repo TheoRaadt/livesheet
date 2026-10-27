@@ -276,15 +276,6 @@ def test_untagged_text_parses_as_before():
     assert parse_statement("v = km/hr").kind == "evaluate"
 
 
-# -- phase B stays a clear error ----------------------------------------------------------
-
-def test_phase_b_features_are_not_silently_ignored():
-    res = last("vary x from 0 in i", "x^2 == 4 in i", "x > 0 in i", "settle in i")
-    assert res.status == "error" and "not available yet" in res.error
-    res = last("vary x from 0 in i", "x^2 == 4 in i", "least x in i")
-    assert res.status == "error" and "not available yet" in res.error
-
-
 def test_display_of_relations_is_pretty():
     from livesheet.gui.pretty import pretty_source_html
 
