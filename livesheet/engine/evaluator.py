@@ -19,6 +19,7 @@ import math
 import re
 
 from .formatting import format_expr, format_number, format_value
+from . import matrices
 from .matrices import MATRIX_BUILTINS, rewrite_brackets, wrap
 from .syntax import Statement, StatementError, parse_statement
 from .units import BASE_UNIT_BY_DIM, UNITS, Measured, UnitError, dims_to_text, measure
@@ -43,7 +44,7 @@ def _builtins() -> dict:
         "exp": sp.exp, "ln": sp.log, "log": _log, "log10": lambda x: sp.log(x, 10),
         "sqrt": sp.sqrt, "root": sp.root, "abs": sp.Abs, "sign": sp.sign,
         "floor": sp.floor, "ceil": sp.ceiling, "mod": sp.Mod,
-        "Max": sp.Max, "Min": sp.Min, "max": sp.Max,
+        "Max": sp.Max, "Min": sp.Min, "max": sp.Max, "min": sp.Min,
         "factorial": sp.factorial, "binomial": sp.binomial, "Gamma": sp.gamma,
         "re": sp.re, "im": sp.im, "conj": sp.conjugate, "arg": sp.arg,
         # calculus / CAS
@@ -140,13 +141,16 @@ class Engine:
                 raise StatementError("Cannot compare matrices with ==")
             return sp.Eq(left, right)
         local = dict(env)
+        matrices.CONTEXT.append((self, local))
         try:
             return parse_expr(text, local_dict=local, global_dict=dict(BUILTINS),
                               transformations=TRANSFORMS, evaluate=True)
         except (SyntaxError, tokenize.TokenError, sp.SympifyError):
             raise StatementError("Syntax error") from None
         except TypeError as exc:
-            raise StatementError(_type_error_text(exc)) from None
+            raise StatementError(_call_error_text(exc, text, local)) from None
+        finally:
+            matrices.CONTEXT.pop()
 
     def _parse_unevaluated(self, text: str, env: dict) -> sp.Expr:
         glob = dict(BUILTINS)
@@ -340,7 +344,8 @@ class Engine:
         if m.rows > MAX_SHOWN or m.cols > MAX_SHOWN:
             return f"[{m.rows}x{m.cols} matrix]"
         measured = [measure(e) for e in m]
-        shared = {x.dims for x in measured if x.magnitude != 0}  # a zero fits any dimension
+        # a zero without a unit fits any dimension; a zero that kept its unit counts
+        shared = {x.dims for x in measured if x.magnitude != 0 or x.dims}
         suffix = ""
         if len(shared) <= 1:
             dims = next(iter(shared), ())
@@ -470,6 +475,18 @@ def _unit_label(text: str) -> str:
     for digit, sup in zip("23456789", "²³⁴⁵⁶⁷⁸⁹"):
         out = out.replace("^" + digit, sup)
     return out
+
+
+_CALL_RE = re.compile(r"(?<![\w.])([^\W\d]\w*)\s*\(")
+
+
+def _call_error_text(exc: TypeError, text: str, env: dict) -> str:
+    """Error text for a failed call; a unit or value used like a function gets a clear name."""
+    for name in _CALL_RE.findall(text):
+        value = env.get(name)
+        if value is not None and not isinstance(value, sp.Lambda) and not callable(value):
+            return f"Not a function: {name}"
+    return _type_error_text(exc)
 
 
 def _type_error_text(exc: TypeError) -> str:

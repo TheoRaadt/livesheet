@@ -116,12 +116,66 @@ def _literal(inner: str) -> str:
         for cell in _split_top(row, ","):
             if not cell.strip():
                 raise StatementError("Empty matrix element")
-            cells.append(_convert(cell.strip(), True))
+            text = _convert(cell.strip(), True)
+            cells.append(f"_c({text}, {text!r})")
         rows.append("_row(" + ", ".join(cells) + ")")
     return "_mat(" + ", ".join(rows) + ")"
 
 
 # ---------------------------------------------------------------- value type
+
+# While a parse is running: (engine, env), so zero-valued cells can recover their unit.
+CONTEXT: list = []
+
+
+def _has_unit(x) -> bool:
+    return isinstance(x, sp.Basic) and x.has(Quantity)
+
+
+def keep_cell(value, text: str):
+    """Cell value; a zero that lost its unit (``0 m``) is re-read unevaluated to keep it."""
+    if CONTEXT and isinstance(value, sp.Expr) and value == 0:
+        engine, env = CONTEXT[-1]
+        try:
+            kept = engine._parse_unevaluated(text, env)
+        except Exception:  # noqa: BLE001 - best effort only
+            return value
+        if _has_unit(kept):
+            return kept
+    return value
+
+
+def smul(a, b):
+    r = a * b
+    if r == 0 and (_has_unit(a) or _has_unit(b)):
+        return sp.Mul(a, b, evaluate=False)
+    return r
+
+
+def sdiv(a, b):
+    r = a / b
+    if r == 0 and (_has_unit(a) or _has_unit(b)):
+        return sp.Mul(a, sp.Pow(b, -1, evaluate=False), evaluate=False)
+    return r
+
+
+def sadd(a, b):
+    r = a + b
+    if r == 0 and (_has_unit(a) or _has_unit(b)):
+        return sp.Add(a, b, evaluate=False)
+    return r
+
+
+def ssub(a, b):
+    r = a - b
+    if r == 0 and (_has_unit(a) or _has_unit(b)):
+        return sp.Add(a, sp.Mul(-1, b, evaluate=False), evaluate=False)
+    return r
+
+
+def sneg(a):
+    return sp.Mul(-1, a, evaluate=False) if _has_unit(a) and (-a) == 0 else -a
+
 
 def _shape(m) -> str:
     return f"{m.rows}x{m.cols}"
@@ -145,12 +199,12 @@ class LMat(_DENSE):
         raise StatementError(scalar_message)
 
     def __add__(self, other):
-        return self._elementwise(other, lambda a, b: a + b, "Cannot add a scalar to a matrix")
+        return self._elementwise(other, sadd, "Cannot add a scalar to a matrix")
 
     __radd__ = __add__
 
     def __sub__(self, other):
-        return self._elementwise(other, lambda a, b: a - b, "Cannot add a scalar to a matrix")
+        return self._elementwise(other, ssub, "Cannot add a scalar to a matrix")
 
     def __rsub__(self, other):
         if isinstance(other, sp.MatrixBase):
@@ -158,7 +212,7 @@ class LMat(_DENSE):
         raise StatementError("Cannot add a scalar to a matrix")
 
     def __neg__(self):
-        return wrap(self.rows, self.cols, [-a for a in self])
+        return wrap(self.rows, self.cols, [sneg(a) for a in self])
 
     def __pos__(self):
         return self
@@ -167,13 +221,13 @@ class LMat(_DENSE):
         if isinstance(other, sp.MatrixBase):
             if self.cols != other.rows:
                 raise StatementError(f"Cannot multiply {_shape(self)} by {_shape(other)}")
-            prod = plain(self) * plain(other)
+            prod = _fix_zero_units(self, other, plain(self) * plain(other))
             if prod.rows == 1 and prod.cols == 1:
                 return prod[0, 0]
             return wrap(prod)
         if _is_scalar(other):
             other = sp.sympify(other)
-            return wrap(self.rows, self.cols, [a * other for a in self])
+            return wrap(self.rows, self.cols, [smul(a, other) for a in self])
         return NotImplemented
 
     def __rmul__(self, other):
@@ -181,7 +235,7 @@ class LMat(_DENSE):
             return wrap(other) * self
         if _is_scalar(other):
             other = sp.sympify(other)
-            return wrap(self.rows, self.cols, [other * a for a in self])
+            return wrap(self.rows, self.cols, [smul(other, a) for a in self])
         return NotImplemented
 
     def __truediv__(self, other):
@@ -189,8 +243,11 @@ class LMat(_DENSE):
             raise StatementError("Cannot divide by a matrix; use inv(...)")
         if _is_scalar(other):
             other = sp.sympify(other)
-            return wrap(self.rows, self.cols, [a / other for a in self])
+            return wrap(self.rows, self.cols, [sdiv(a, other) for a in self])
         return NotImplemented
+
+    def __rpow__(self, other):
+        raise StatementError("A matrix cannot be used as an exponent")
 
     def __rtruediv__(self, other):
         raise StatementError("Cannot divide by a matrix; use inv(...)")
@@ -204,6 +261,22 @@ class LMat(_DENSE):
             return wrap(_DENSE.eye(self.rows))
         base = self if n > 0 else inv(self)
         return wrap(plain(base) ** abs(int(n)))
+
+
+def _fix_zero_units(a, b, prod):
+    """Recompute zero entries of a product whose factors carry units, so the unit stays."""
+    if not any(_has_unit(e) for e in list(a) + list(b)):
+        return prod
+    flat = list(prod)
+    for i in range(prod.rows):
+        for j in range(prod.cols):
+            if flat[i * prod.cols + j] == 0:
+                terms = [smul(a[i, k], b[k, j]) for k in range(a.cols)]
+                total = terms[0]
+                for t in terms[1:]:
+                    total = sadd(total, t)
+                flat[i * prod.cols + j] = total
+    return _DENSE(prod.rows, prod.cols, flat)
 
 
 def plain(m):
@@ -223,8 +296,14 @@ def wrap(*args) -> LMat:
 
 def _need_matrix(name: str, x) -> sp.MatrixBase:
     if not isinstance(x, sp.MatrixBase):
+        _not_defined(x)
         raise StatementError(f"{name}() needs a matrix")
     return x
+
+
+def _not_defined(x) -> None:
+    if isinstance(x, sp.Symbol):
+        raise StatementError(f"{x.name} is not defined")
 
 
 def _square(m) -> None:
@@ -290,8 +369,18 @@ def is_singular(m) -> bool:
     return d == 0 if d.is_Rational else sp.simplify(d) == 0
 
 
+MAX_SYMBOLIC = 5
+
+
+def _check_symbolic_size(m) -> None:
+    if max(m.rows, m.cols) > MAX_SYMBOLIC and any(e.free_symbols for e in m):
+        raise StatementError(f"Matrix too large for symbolic evaluation (max {MAX_SYMBOLIC}x{MAX_SYMBOLIC}); "
+                             "use numeric entries")
+
+
 def _require_invertible(m) -> None:
     _square(m)
+    _check_symbolic_size(m)
     if is_singular(m):
         raise StatementError("Matrix is singular")
 
@@ -301,6 +390,7 @@ def _require_invertible(m) -> None:
 def det(m):
     _need_matrix("det", m)
     _square(m)
+    _check_symbolic_size(m)
     arr = _numeric_array(m)
     if arr is not None and _has_float(m):
         import numpy as np
@@ -365,7 +455,7 @@ def hadamard(a, b):
     _need_matrix("hadamard", a)
     _need_matrix("hadamard", b)
     a = wrap(a)
-    return a._elementwise(b, lambda x, y: x * y, "")
+    return a._elementwise(b, smul, "")
 
 
 def _size(x) -> int:
@@ -451,6 +541,7 @@ def _index(spec, size: int):
 
 def index(x, *specs):
     if not isinstance(x, sp.MatrixBase):
+        _not_defined(x)
         raise StatementError("Only matrices can be indexed")
     if len(specs) == 1:
         if not _is_vector(x):
@@ -472,7 +563,7 @@ def index(x, *specs):
 
 
 MATRIX_BUILTINS = {
-    "_mat": make_matrix, "_row": make_row, "_idx": index, 
+    "_mat": make_matrix, "_c": keep_cell, "_row": make_row, "_idx": index, 
     "det": det, "inv": inv, "transpose": transpose, "trace": trace,
     "solve_system": solve_system, "dot": dot, "cross": cross, "hadamard": hadamard,
     "eye": eye, "zeros": zeros, "ones": ones, "diag": diag,

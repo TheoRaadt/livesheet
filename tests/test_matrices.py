@@ -343,7 +343,7 @@ def test_size_too_large():
 
 def test_order_top_to_bottom():
     res = run("v[1] =", "v := [1; 2]")
-    assert res[0].status == "error" and res[0].error == "Only matrices can be indexed"
+    assert res[0].status == "error" and res[0].error == "v is not defined"
 
 
 def test_shadowing_functions_and_names():
@@ -366,5 +366,33 @@ def test_index_inside_table_columns():
 def test_function_with_matrix_parameter_is_unsupported_but_clean():
     # deviation from the spec edge case: det(M) is evaluated at definition time, M is a scalar symbol there
     res = run("f(M) := det(M)")[0]
-    assert res.status == "error" and res.error == "det() needs a matrix"
+    assert res.status == "error" and res.error == "M is not defined"
     assert out("g(x) := [x, 2*x]", "g(2) =") == "= [2, 4]"
+
+
+def test_zero_entries_keep_their_unit():
+    assert out("[0 m, 0 m] =") == "= [0, 0] m"
+    assert out("[0, 0]*m =") == "= [0, 0] m"
+    assert out("zeros(2, 2)*m =") == "= [0, 0; 0, 0] m"
+    assert out("[0 m, 1 m]*[1 m; 0 m] =") == "= 0 m²"
+    assert out("[0 m, 1 s] =") == "= [0 m, 1 s]"
+    assert out("[1, 2]*m - [1, 2]*m =") == "= [0, 0] m"
+    assert out("[0, 0]*m = cm") == "= [0, 0] cm"
+    assert "Units do not match" in err("[0, 0]*m = s")
+
+
+def test_scalar_power_of_matrix_is_clean_error():
+    assert err(A, "2^A =") == "A matrix cannot be used as an exponent"
+
+
+def test_symbolic_size_guard():
+    rows = "; ".join(", ".join(f"a{i}{j}" for j in range(6)) for i in range(6))
+    for call in ("det", "inv"):
+        assert "too large for symbolic" in err(f"M := [{rows}]", f"{call}(M) →")
+    assert "a00" in out("M := [a00, a01; a10, a11]", "det(M) →")
+    assert out("det(eye(6)) =") == "= 1"
+
+
+def test_undefined_name_with_matrix_functions():
+    assert err("B[1] =") == "B is not defined"
+    assert err("det(B) =") == "B is not defined"

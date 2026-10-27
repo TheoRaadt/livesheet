@@ -7,3 +7,5 @@
 2026-10-27 developer -> manager: fixed review 001 defects D1,D2,D3,D5 (engine), D4 test now normal; test_gui skips when PySide6 unloadable. Not committed.
 2026-10-27 tester -> manager: rerun on 364f057 green (163 pass); GUI run still blocked: Terminal is click-tier even with full control, needs Theo to start app or a non-terminal launcher (reviews/001)
 2026-10-27 developer -> manager: spec 002a implemented (engine/matrices.py, tests/test_matrices.py; GUI ':' inside brackets untested, no libEGL). Not committed.
+2026-10-27 tester -> manager: review 002a done headless (392 pass, 12 xfail = defects M1-M6, see reviews/002a); GUI part skipped: no LiveSheet window open
+2026-10-27 developer -> manager: fixed review 002a M1 (zero units, partial), M4, M5, M6, min(), NBSP; M2 test flipped, M3 xfail kept. Not committed.
