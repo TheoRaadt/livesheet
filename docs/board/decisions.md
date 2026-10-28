@@ -29,3 +29,21 @@
 - 2026-10-27 GUI layout: results/tables/grids may overlap regions below them for now; backlog item 'push-down layout / reserved result space' (M2). Wide symbolic grids: no wrapping yet.
 - 2026-10-27 Save As/Export default to last-used folder or Documents; consider unique default name
 - 003 spec fix: example message for infeasible `x^2 + 1 == 0` is 5.0e-01 under the spec's own normalisation
+
+## Open 2026-10-28 (spec 004 plots) — manager recommendation in brackets
+- Renderer: QPainter directly vs matplotlib vs pyqtgraph [QPainter: no new dependency, one path for screen/PDF/PNG]
+- Text-spec editing (`plot / over / show ...`) for phase A, form dialog later [yes]
+- Plot keywords `over`, `show`, `xlim`, `ylim`, `xunit`, `yunit`, `against`, `mode polar` [OK; include in the pre-1.0 notation review]
+- `.lsheet` version 2 only when a plot is present [yes]
+- Second y axis: separate spec later [yes, two plots meanwhile]
+- Default display unit = unit the formatter prints for the first point [yes, consistent with `=`]
+- Defaults 101 points, 400 x 260 [OK]
+- Plot may overlap regions below until backlog 20 [accept for phase A]
+- PNG/SVG export of one plot [backlog extra]
+- Manager decision: phase A1 (engine only, renderer-independent) may start on these recommendations
+
+## Decided 2026-10-28 (Theo, spec 004)
+- Renderer: QPainter directly (no new dependency)
+- `.lsheet` version 2 only when a plot is present
+- Plots may overlap regions below until backlog 20 (push-down layout)
+- Other 004 questions follow the manager recommendations above unless Theo says otherwise

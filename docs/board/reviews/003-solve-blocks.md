@@ -65,3 +65,23 @@ OBSERVATIONS / OPEN:
 - G3 (layout, minor): long result and error lines are not wrapped; the 10-unknown result line and the Not-converged message run past the right window edge and the canvas gets a horizontal scrollbar. Nothing overlaps neighbours vertically (one text line), but the end of the result cannot be read without horizontal scrolling. Same class as the wide-grid finding in review 001.
 - G4 (CRASH or quit, UNCONFIRMED, high priority to reproduce): after the above, I selected the `settle in fall` result region (single click, region frame shown) and pressed Backspace to delete it. The window stayed one more frame, then the LiveSheet process was gone (computer_list_apps: org.python.python not running; app_menu "app not running"). I did not quit the app. Code path: worksheet.keyPressEvent -> remove_regions (removeItem + deleteLater + schedule_recalc). The engine side is fine (headless run of the same sheet without the result region gives only `t is not defined`). I could not see a traceback (Terminal not granted). Possible cause: deleting a result region of a model while its dependants are re-evaluated; or something unrelated (e.g. Theo closed it). Needs a repeat: select `settle in fall` and delete it.
 NOT CHECKED (app ended): deleting the vary region / result region and the resulting messages, source text after `<=`, Save As / Export dialogs (not touched, nothing written), zoom (never changed, 100%). Scratch regions were lost with the process; demo.lsheet was never saved, git status is clean (examples/ untouched).
+
+## Manual GUI checklist 003B (for Theo)
+Phase B (inequalities, chained relations, least/most, marks). Expected strings were produced headless by the engine on the working tree (2026-10-28). Start with `livesheet examples/demo.lsheet`. Never use Save or Save As on examples/ (cancel any dialog); close at the end with Don't Save / Discard.
+
+1. Type four regions, each on its own line, in order: `vary x from 0 in i` / `x^2 == 4 in i` / `x > 0 in i` / `settle in i`. Expect the two constraints to show a green-ish `✓`, the settle region `⇒ x = 2`. Look at: the marks appear next to the constraint regions, not on the vary region (that one shows nothing).
+2. Add a region `x =` below. Expect `= 2`.
+3. Edit `x > 0 in i` into `x < 0 in i` (change the character). Expect `⇒ x = -2`, marks stay `✓`. Edit back to `>`; result returns to 2.
+4. Select the `settle in i` region (click once) and press Backspace. Expect: no crash, the `x =` region turns red `x is not defined`, the constraint regions show red or no mark; window stays responsive. Then press Cmd+Z if undo exists; otherwise retype `settle in i` and see the result return.
+5. Rectangle: `vary w from 1 m, d from 1 m in plot` / `2*(w + d) <= 20 m in plot` / `most w*d in plot`. Expect `⇒ w = 5 m, d = 5 m; value = 25 m²` (the superscript 2 must render). Check the `≤` pretty-printing of typed `<=` and that the line is readable (known: long lines run off to the right).
+6. Insert `0 m <= w <= 4 m in plot` above the `most` region. Expect `⇒ w = 4 m, d = 6 m; value = 24 m²` and `✓` on the chained constraint.
+7. Projection: `vary x from 0, y from 0 in n` / `x + y <= 2 in n` / `least (x-3)^2 + (y-1)^2 in n`. Expect `⇒ x = 2, y = 0; value = 2`.
+8. Infeasible: `vary x from 0 in f` / `x >= 2 in f` / `x <= 1 in f` / `settle in f`. Expect the settle region red with `No solution found: closest point violates "x >= 2" by 5.0e-01` and a `✗` on `x >= 2 in f`. Must return instantly.
+9. Unbounded: `vary x from 0 in ub` / `most x in ub`. Expect red `Not converged: stopped after 200 function evaluations ...` within about a second; the window must not freeze (try typing in another region right after).
+10. Wrong unit: in step 5 change `20 m` to `20 s`. Expect red `Units do not match ...` on the result region; restore `20 m` and the result heals.
+11. Delete the `vary w ... in plot` region (select, Backspace). Expect a red message on the result region (no vary / no unknowns for model "plot"), no crash.
+12. Zoom in and out (Cmd + / Cmd -) and resize the window with all of the above visible: marks and results stay attached to their regions and nothing overlaps.
+13. Open File > Export PDF, check the preview/dialog opens and the `✓ ✗ ⇒ ²` glyphs appear in the page; Cancel (do not write anywhere inside the repo).
+14. Close the window / quit with Don't Save. Afterwards run `git status` in the repo: examples/demo.lsheet must not be listed as modified. Check the process is gone (Activity Monitor or `pgrep -f livesheet`).
+
+Report any crash, any red region that should be healthy, any freeze over 2 s, and any step where the text differs from the expected one.

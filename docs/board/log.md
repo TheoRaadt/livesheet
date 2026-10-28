@@ -26,3 +26,8 @@
 2026-10-28 manager: G4 verified by Theo in the real app (no crash after Backspace on selected settle region): CLOSED
 2026-10-28 developer -> manager: spec 002b implemented (eigenvalues, eigenvectors, rank, norm, solve_least_squares in engine/matrices.py; exact mode flag set by evaluator for →; tests/test_matrices_b.py, 25 tests). Not committed.
 2026-10-28 mathcad-specialist -> manager: spec 004 plots ready, phases A1/A2 (minimal XY plot, doc format, PDF) and B1/B2 (log/legend/markers, parametric/polar); renderer choice QPainter vs matplotlib is open question 1 (docs/board/specs/004-plots.md)
+2026-10-28 manager: spec 004 IP-reviewed: PASS (criteria 1-11 numbers recomputed; criteria 3 and 10 wording cleaned); open questions in decisions.md; phase A1 (engine) assigned to developer
+2026-10-28 tester -> manager: spec 002b black-box review done (tests/test_matrices_b_blackbox.py, 48 cases, 1 strict xfail E1, full suite 653 passed/2 xfailed; docs/board/reviews/002b-eigen.md); manual GUI checklist 003B for Theo appended to docs/board/reviews/003-solve-blocks.md (no computer-use this session, nothing committed)
+2026-10-28 manager: review 002b accepted (47/48, E1 low -> backlog 25; threshold caveat -> backlog 26); 003B manual checklist handed to Theo
+2026-10-28 manager: Theo decided 004: QPainter, version 2 only with plots, overlap accepted; A2 may start after A1
+2026-10-28 developer -> manager: spec 004 phase A1 implemented (engine/plotting.py: PlotTrace, PlotData, nice_axis, build_plot; syntax 'plot' kind + plot_lines; RegionResult.plot; Engine._in_unit helper; tests/test_plot.py 41 tests, full suite 694 pass + 2 xfail). A2 (document/GUI/PDF) not started. Not committed.

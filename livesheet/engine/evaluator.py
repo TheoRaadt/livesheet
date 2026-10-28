@@ -18,6 +18,7 @@ from sympy.parsing.sympy_parser import (
 import math
 import re
 
+from .plotting import PlotData, build_plot
 from .formatting import format_expr, format_number, format_value
 from . import matrices, solver
 from .matrices import MATRIX_BUILTINS, rewrite_brackets, wrap
@@ -117,6 +118,7 @@ class RegionResult:
     rows: list[list[str]] = field(default_factory=list)    # table cells, one list per row
     grid: list[list[str]] = field(default_factory=list)    # matrix result cells (not set for placeholders)
     grid_unit: str = ""     # unit text printed after a matrix grid
+    plot: PlotData | None = None   # plot statements: chart data
 
 
 class Engine:
@@ -289,6 +291,10 @@ class Engine:
                 return RegionResult("ok", defines=st.name)
             if st.kind == "table":
                 return self._table(st, env)
+            if st.kind == "plot":
+                data = build_plot(st, env, self)
+                n = len(data.traces)
+                return RegionResult("ok", f"plot {n} traces, {len(data.traces[0].x)} points", plot=data)
             if st.kind == "evaluate":
                 value = self.parse(st.expr, env)
                 return RegionResult("ok", "= " + self._numeric(value, st.unit, env))
@@ -448,14 +454,18 @@ class Engine:
         rows = [", ".join(r) for r in grid]
         return "[" + "; ".join(rows) + "]" + suffix
 
+    def _in_unit(self, meas: Measured, unit_text: str, env: dict) -> sp.Expr:
+        """Magnitude of ``meas`` expressed in the unit written as ``unit_text`` (dimensions must match)."""
+        unit_val = self.parse(unit_text, env)
+        _check_defined(unit_val)
+        target = measure(unit_val)
+        if target.dims != meas.dims:
+            raise UnitError(f"Units do not match: result is {dims_to_text(meas.dims) or 'dimensionless'}")
+        return meas.magnitude / target.magnitude
+
     def _format_measured(self, meas: Measured, unit_text: str, env: dict) -> str:
         if unit_text:
-            unit_val = self.parse(unit_text, env)
-            _check_defined(unit_val)
-            target = measure(unit_val)
-            if target.dims != meas.dims:
-                raise UnitError(f"Units do not match: result is {dims_to_text(meas.dims) or 'dimensionless'}")
-            number = format_number(meas.magnitude / target.magnitude, self.significant)
+            number = format_number(self._in_unit(meas, unit_text, env), self.significant)
             return f"{number} {_unit_label(unit_text)}"
         number = format_number(meas.magnitude, self.significant)
         unit = dims_to_text(meas.dims)

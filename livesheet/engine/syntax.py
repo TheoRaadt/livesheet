@@ -13,6 +13,7 @@ A math region holds exactly one statement::
     x^2 == 4 → solve, x   equations use ``==``
     t := 0 s to 10 s step 2 s   range definition (``step`` optional, also ``≡``/``::=``)
     table t, v*t in m           result table over one range variable
+    plot                        first line of a plot spec; then ``over``/``show``/... lines
 """
 
 from __future__ import annotations
@@ -67,6 +68,7 @@ class Statement:
     guesses: list[tuple[str, str]] = field(default_factory=list)  # model_vary: (unknown, guess text)
     goal: str = ""                # model_result: root | min | max
     relations: list[str] = field(default_factory=list)  # model_require: one text per relation
+    plot_lines: list[tuple[str, str]] = field(default_factory=list)  # plot: (keyword, remainder)
 
 
 def normalize(text: str) -> str:
@@ -109,6 +111,10 @@ def parse_statement(source: str) -> Statement:
     text = normalize(source).strip()
     if not text:
         return Statement("empty")
+
+    plot = _parse_plot(source)
+    if plot is not None:
+        return plot
 
     table = _parse_table(text)
     if table is not None:
@@ -180,6 +186,23 @@ def _parse_range(name: str, params: list[str], rhs: str, show: bool, is_global: 
         raise StatementError("Use table to show a range")
     start, end, step = mt.group(1).strip(), mt.group(2).strip(), (mt.group(3) or "").strip()
     return Statement("range", name, expr=start, range_end=end, range_step=step, is_global=is_global)
+
+
+_PLOT_TEXT_KEYWORDS = ("title", "xlabel", "ylabel")
+
+
+def _parse_plot(source: str) -> Statement | None:
+    """A text whose first non-blank line is exactly ``plot`` is a plot spec (one option per line)."""
+    lines = [ln.replace("\u00a0", " ").strip() for ln in source.splitlines()]
+    lines = [ln for ln in lines if ln]
+    if not lines or lines[0] != "plot":
+        return None
+    parsed: list[tuple[str, str]] = []
+    for line in lines[1:]:
+        word, _, rest = line.partition(" ")
+        rest = rest.strip()
+        parsed.append((word, rest if word in _PLOT_TEXT_KEYWORDS else normalize(rest).strip()))
+    return Statement("plot", plot_lines=parsed)
 
 
 def _parse_table(text: str) -> Statement | None:
