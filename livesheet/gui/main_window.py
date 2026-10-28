@@ -111,6 +111,7 @@ class MainWindow(QMainWindow):
         m = mb.addMenu("&Insert")
         m.addAction(self._action("&Math Region", lambda: self.sheet.insert_region("math"), "Ctrl+M"))
         m.addAction(self._action("&Text Region", lambda: self.sheet.insert_region("text"), "Ctrl+T"))
+        m.addAction(self._action("&Plot", lambda: self.sheet.insert_region("plot"), "Ctrl+Shift+P"))
         m.addSeparator()
         for label, token in ((":=  Definition", ":= "), ("≡  Global definition", "≡ "),
                              ("=  Evaluate", " ="), ("→  Symbolic", " → ")):

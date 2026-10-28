@@ -5,10 +5,11 @@ from __future__ import annotations
 import shiboken6
 from PySide6.QtCore import QPointF, QRectF, Qt, QTimer, Signal
 from PySide6.QtGui import QColor, QKeyEvent, QPainter, QPen, QWheelEvent
-from PySide6.QtWidgets import QGraphicsItem, QGraphicsScene, QGraphicsView
+from PySide6.QtWidgets import QGraphicsItem, QGraphicsScene, QGraphicsView, QMenu
 
 from ..document import RegionData, SheetDocument
 from ..engine import Engine
+from .plotregion import STARTER_TEXT, PlotRegion, engine_source
 from .regions import GRID, MathRegion, Region, TextRegion, snap
 
 PAGE_WIDTH = 820
@@ -89,8 +90,15 @@ class Worksheet(QGraphicsScene):
 
     # -- region management -----------------------------------------------------
 
-    def add_region(self, kind: str, pos: QPointF, text: str = "") -> Region:
-        region: Region = MathRegion(text) if kind == "math" else TextRegion(text)
+    def add_region(self, kind: str, pos: QPointF, text: str = "",
+                   size: tuple[float, float] | None = None) -> Region:
+        region: Region
+        if kind == "math":
+            region = MathRegion(text)
+        elif kind == "plot":
+            region = PlotRegion(text, *(size or (None, None)))
+        else:
+            region = TextRegion(text)
         self.addItem(region)
         region.setPos(QPointF(snap(pos.x()), snap(pos.y())))
         region.contentChanged.connect(self._on_content_changed)
@@ -104,7 +112,11 @@ class Worksheet(QGraphicsScene):
         current = self.editing_region()
         if current is not None:
             current.finish_editing()
-        region = self.add_region(kind, self.crosshair.pos())
+        if kind == "plot":
+            region = self.add_region(kind, self.crosshair.pos(), initial_text or STARTER_TEXT)
+            initial_text = ""
+        else:
+            region = self.add_region(kind, self.crosshair.pos())
         self.clearSelection()
         region.start_editing()
         if initial_text:
@@ -113,6 +125,11 @@ class Worksheet(QGraphicsScene):
         self.crosshair.hide()
         self.set_modified()
         return region
+
+    def insert_plot_at(self, pos: QPointF) -> Region:
+        """Create a plot region at ``pos`` (snapped) and start editing its spec."""
+        self.crosshair.setPos(snap(pos.x()), snap(pos.y()))
+        return self.insert_region("plot")
 
     def remove_regions(self, regions: list[Region]) -> None:
         if not regions:
@@ -165,7 +182,8 @@ class Worksheet(QGraphicsScene):
 
     def to_document(self) -> SheetDocument:
         regs = [
-            RegionData(r.kind, r.pos().x(), r.pos().y(), r.text())
+            RegionData(r.kind, r.pos().x(), r.pos().y(), r.text(),
+                       *((r.size_w, r.size_h) if isinstance(r, PlotRegion) else (None, None)))
             for r in self.ordered_regions() if not r.is_empty()
         ]
         return SheetDocument(regions=regs, significant=self.engine.significant)
@@ -174,7 +192,8 @@ class Worksheet(QGraphicsScene):
         self.clear_sheet()
         self.engine.significant = doc.significant
         for rd in doc.regions:
-            self.add_region(rd.kind, QPointF(rd.x, rd.y), rd.text)
+            self.add_region(rd.kind, QPointF(rd.x, rd.y), rd.text,
+                            (rd.w, rd.h) if rd.kind == "plot" else None)
         self.recalculate()
         bottom = max((r.sceneBoundingRect().bottom() for r in self.regions()), default=GRID * 2)
         self.crosshair.setPos(GRID * 4, snap(bottom + 2 * GRID))
@@ -187,15 +206,19 @@ class Worksheet(QGraphicsScene):
 
     def recalculate(self) -> None:
         self._timer.stop()
-        maths = [r for r in self.ordered_regions() if isinstance(r, MathRegion)]
-        results = self.engine.evaluate((id(r), r.source) for r in maths)
+        evaluated = [r for r in self.ordered_regions() if isinstance(r, (MathRegion, PlotRegion))]
+        results = self.engine.evaluate(
+            (id(r), engine_source(r.source) if isinstance(r, PlotRegion) else r.source) for r in evaluated)
         errors = 0
-        for r in maths:
+        for r in evaluated:
             res = results.get(id(r))
             r.set_result(res)
             errors += bool(res and res.status == "error")
         self._update_rect()
-        self.statusMessage.emit(f"{len(maths)} math regions" + (f" · {errors} with errors" if errors else ""))
+        maths = sum(isinstance(r, MathRegion) for r in evaluated)
+        plots = len(evaluated) - maths
+        self.statusMessage.emit(f"{maths} math regions" + (f" · {plots} plots" if plots else "")
+                                + (f" · {errors} with errors" if errors else ""))
 
     # -- events ------------------------------------------------------------------
 
@@ -216,6 +239,17 @@ class Worksheet(QGraphicsScene):
             self.crosshair.setPos(region.pos().x(), snap(rect.bottom() + 2 * GRID))
         self.crosshair.show()
         self.recalculate()
+
+    def contextMenuEvent(self, event) -> None:
+        if self.editing_region() is not None:
+            super().contextMenuEvent(event)
+            return
+        menu = QMenu()
+        plot_here = menu.addAction("Plot here")
+        pos = event.scenePos()
+        if menu.exec(event.screenPos()) is plot_here:
+            self.insert_plot_at(pos)
+        event.accept()
 
     def mousePressEvent(self, event) -> None:
         item = self.itemAt(event.scenePos(), self.views()[0].transform() if self.views() else self._identity())
