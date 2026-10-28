@@ -468,7 +468,11 @@ class Engine:
             if words[0] in ("solve", "collect", "series", "partfrac", "diff", "integrate", "limit"):
                 free_names.update(w.split("=")[0].strip() for w in words[1:2])
         local = {k: v for k, v in env.items() if k not in free_names}
-        value = self.parse(st.expr, local)
+        matrices.EXACT_MODE[0] = True
+        try:
+            value = self.parse(st.expr, local)
+        finally:
+            matrices.EXACT_MODE[0] = False
         for words in st.keywords:
             value = self._apply_keyword(value, words, local)
         if isinstance(value, sp.MatrixBase):

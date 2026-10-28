@@ -21,3 +21,8 @@
 2026-10-27 developer -> manager: spec 003 phase B implemented (inequalities, chained, least/most, ✓/✗ marks; tests/test_solve_b.py). Not committed.
 2026-10-27 developer -> manager: G4 fix (Worksheet._discard: single-owner deferred destruction); Qt regression tests in test_gui_helpers.py; backlog 24 added. Unverified on Mac. Not committed.
 2026-10-27 manager: documentation updated (README, STATUS, PLAN, backlog); session ended pending Mac verification of G4 and 003B GUI check
+2026-10-28 developer -> manager: fixed 'table ),a(' leaking IndexError; _parse_table now checks bracket balance in engine/syntax.py and reports 'Unbalanced brackets'; suite run, see report.
+2026-10-28 manager: G4 Qt regression tests pass on Theo's Mac (18/18, not skipped); table bracket fix reviewed (not committed, awaiting Theo); spec 002b IP-reviewed: PASS, assigned to developer; plots spec requested from mathcad-specialist
+2026-10-28 manager: G4 verified by Theo in the real app (no crash after Backspace on selected settle region): CLOSED
+2026-10-28 developer -> manager: spec 002b implemented (eigenvalues, eigenvectors, rank, norm, solve_least_squares in engine/matrices.py; exact mode flag set by evaluator for →; tests/test_matrices_b.py, 25 tests). Not committed.
+2026-10-28 mathcad-specialist -> manager: spec 004 plots ready, phases A1/A2 (minimal XY plot, doc format, PDF) and B1/B2 (log/legend/markers, parametric/polar); renderer choice QPainter vs matplotlib is open question 1 (docs/board/specs/004-plots.md)

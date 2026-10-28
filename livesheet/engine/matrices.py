@@ -561,6 +561,275 @@ def index(x, *specs):
         return wrap(1, x.cols, [x[r, j] for j in range(x.cols)])
     return x[r, c]
 
+# ---------------------------------------------------------------- spec 002b: eigen-analysis
+
+EXACT_MODE = [False]  # set by the evaluator while a symbolic (arrow) result is computed
+_EIG_TOLERANCE = 1e-10
+_DEFECT_TOLERANCE = 1e-8
+_NO_CLOSED_FORM = "No closed form found; use ="
+
+
+def unit_of(dims):
+    """Product of base units for a dimension tuple (empty tuple gives 1)."""
+    from .units import BASE_UNIT_BY_DIM
+
+    expr = sp.Integer(1)
+    for dim, exp in dims:
+        expr = expr * BASE_UNIT_BY_DIM[dim] ** exp
+    return expr
+
+
+def split_units(m):
+    """(matrix of SI magnitudes, common dimension tuple); mixed dimensions raise UnitError.
+
+    A zero without a unit fits any dimension, as in result formatting.
+    """
+    from .units import UnitError, measure
+
+    mags, seen = [], set()
+    for e in m:
+        meas = measure(e) if _has_unit(e) else None
+        mag, dims = (meas.magnitude, meas.dims) if meas else (e, ())
+        mags.append(mag)
+        if mag != 0 or dims:
+            seen.add(dims)
+    if len(seen) > 1:
+        raise UnitError("Units do not match")
+    return _DENSE(m.rows, m.cols, mags), next(iter(seen), ())
+
+
+def attach_units(m, dims) -> LMat:
+    """Matrix ``m`` (SI magnitudes) multiplied by the unit of ``dims``."""
+    if not dims:
+        return wrap(m)
+    unit = unit_of(dims)
+    return wrap(m.rows, m.cols, [smul(e, unit) for e in m])
+
+
+def _symbolic_entries(m) -> bool:
+    return any(e.free_symbols for e in m)
+
+
+def _use_exact(m) -> bool:
+    return _symbolic_entries(m) or (EXACT_MODE[0] and not _has_float(m))
+
+
+def _entries_array(m, what: str):
+    arr = _numeric_array(m)
+    if arr is None:
+        raise StatementError(f"{what} needs numeric matrix entries")
+    return arr
+
+
+def _order(vals) -> list[int]:
+    """Indices that sort complex values by real part, ties (within tolerance) by imaginary part."""
+    scale = max((abs(v) for v in vals), default=0.0)
+    tol = _EIG_TOLERANCE * scale
+    idx = sorted(range(len(vals)), key=lambda i: (vals[i].real, vals[i].imag))
+    out, group = [], []
+    for i in idx:
+        if group and vals[i].real - vals[group[0]].real > tol:
+            out += sorted(group, key=lambda k: (vals[k].imag, vals[k].real))
+            group = []
+        group.append(i)
+    return out + sorted(group, key=lambda k: (vals[k].imag, vals[k].real))
+
+
+def _fix_vectors(vecs, tol: float = 1e-12):
+    """Sign/phase convention (first significant component positive) and noise snapping."""
+    import numpy as np
+
+    vecs = vecs.astype(complex)
+    for k in range(vecs.shape[1]):
+        col = vecs[:, k]
+        big = np.nonzero(np.abs(col) > _EIG_TOLERANCE)[0]
+        if big.size:
+            lead = col[big[0]]
+            vecs[:, k] = col * (np.conj(lead) / abs(lead))
+    vecs.real[np.abs(vecs.real) < tol] = 0.0
+    vecs.imag[np.abs(vecs.imag) < tol] = 0.0
+    return vecs
+
+
+def _eig_numeric(arr, want_vectors: bool):
+    """Sorted eigenvalues (complex array) and unit eigenvectors (columns) of a float matrix."""
+    import numpy as np
+
+    arr = arr.astype(complex) if np.iscomplexobj(arr) else arr.astype(float)
+    symmetric = np.array_equal(arr, arr.conj().T)
+    vals, vecs = np.linalg.eigh(arr) if symmetric else np.linalg.eig(arr)
+    vals = vals.astype(complex)
+    tol = _EIG_TOLERANCE * (np.abs(vals).max() if vals.size else 0.0)
+    vals.imag[np.abs(vals.imag) <= tol] = 0.0
+    order = _order(list(vals))
+    vals, vecs = vals[order], vecs[:, order]
+    if want_vectors and not symmetric and vecs.shape[0]:
+        s = np.linalg.svd(vecs, compute_uv=False)
+        if s[-1] <= _DEFECT_TOLERANCE * s[0]:
+            raise StatementError("Matrix is defective: not enough independent eigenvectors")
+    start = 0
+    while start < len(vals):
+        end = start + 1
+        while end < len(vals) and abs(vals[end] - vals[start]) <= tol:
+            end += 1
+        if end - start > 1:
+            vals[start:end] = vals[start:end].mean()
+            if want_vectors and not symmetric:
+                vecs[:, start:end] = np.linalg.qr(vecs[:, start:end])[0]
+        start = end
+    return vals, (_fix_vectors(vecs) if want_vectors else None)
+
+
+def _real_if_possible(arr):
+    import numpy as np
+
+    return arr.real if not np.any(arr.imag) else arr
+
+
+def _float_number(x):
+    x = complex(x)
+    if x.imag == 0:
+        return sp.Float(x.real + 0.0)
+    imag = sp.I * sp.Float(x.imag)
+    return imag if x.real == 0 else sp.Float(x.real) + imag
+
+
+def _float_matrix(arr) -> LMat:
+    arr = _real_if_possible(arr)
+    return wrap(arr.shape[0], arr.shape[1], [_float_number(x) for x in arr.flatten()])
+
+
+def _exact_sort_key(vals) -> list[int]:
+    if all(v.is_number for v in vals):
+        nums = [complex(sp.N(v, 30)) for v in vals]
+        return _order(nums)
+    return sorted(range(len(vals)), key=lambda i: sp.default_sort_key(vals[i]))
+
+
+def _closed_form_or_fail(*items) -> None:
+    if any(isinstance(x, sp.Basic) and x.has(sp.CRootOf) for x in items):
+        raise StatementError(_NO_CLOSED_FORM)
+
+
+def _exact_eigenvalues(m) -> list:
+    _check_symbolic_size(m)
+    try:
+        table = _DENSE(m).eigenvals()
+    except (NotImplementedError, sp.PolynomialError, ValueError):
+        raise StatementError(_NO_CLOSED_FORM) from None
+    vals = [v for v, k in table.items() for _ in range(k)]
+    _closed_form_or_fail(*vals)
+    if len(vals) != m.rows:
+        raise StatementError(_NO_CLOSED_FORM)
+    return [vals[i] for i in _exact_sort_key(vals)]
+
+
+def _exact_eigenvectors(m):
+    _check_symbolic_size(m)
+    try:
+        triples = _DENSE(m).eigenvects()
+    except (NotImplementedError, sp.PolynomialError, ValueError):
+        raise StatementError(_NO_CLOSED_FORM) from None
+    values, columns = [], []
+    for val, mult, vecs in triples:
+        _closed_form_or_fail(val, *vecs)
+        if len(vecs) < mult:
+            raise StatementError("Matrix is defective: not enough independent eigenvectors")
+        basis = sp.GramSchmidt([sp.Matrix(v) for v in vecs], True)
+        for v in basis:
+            values.append(val)
+            columns.append(_exact_sign([sp.simplify(e) for e in v]))
+    if len(values) != m.rows:
+        raise StatementError(_NO_CLOSED_FORM)
+    order = _exact_sort_key(values)
+    cols = [columns[i] for i in order]
+    return wrap(m.rows, m.rows, [cols[c][r] for r in range(m.rows) for c in range(m.rows)])
+
+
+def _exact_sign(col: list) -> list:
+    lead = next((e for e in col if e != 0), None)
+    if lead is not None and lead.is_extended_negative:
+        return [-e for e in col]
+    return col
+
+
+def _eigen_input(name: str, m):
+    _need_matrix(name, m)
+    _square(m)
+    return split_units(m)
+
+
+def eigenvalues(m):
+    mag, dims = _eigen_input("eigenvalues", m)
+    if _use_exact(mag):
+        vals = _exact_eigenvalues(mag)
+        return attach_units(_DENSE(len(vals), 1, vals), dims)
+    vals, _ = _eig_numeric(_entries_array(mag, "eigenvalues()"), False)
+    return attach_units(_float_matrix(vals.reshape(-1, 1)), dims)
+
+
+def eigenvectors(m):
+    mag, _dims = _eigen_input("eigenvectors", m)
+    if _use_exact(mag):
+        return _exact_eigenvectors(mag)
+    _, vecs = _eig_numeric(_entries_array(mag, "eigenvectors()"), True)
+    return _float_matrix(vecs)
+
+
+def rank(m):
+    _need_matrix("rank", m)
+    from .units import measure
+
+    # per-entry magnitudes: columns may legitimately carry different units
+    mag = _DENSE(m.rows, m.cols, [measure(e).magnitude if _has_unit(e) else e for e in m])
+    _check_symbolic_size(mag)
+    return sp.Integer(_rank_exact_or_float(mag))
+
+
+def norm(x):
+    if not isinstance(x, sp.MatrixBase):
+        return sp.Abs(x)
+    mag, dims = split_units(x)
+    total = sp.Add(*[sp.Abs(e) ** 2 for e in mag])
+    result = sp.sqrt(total)
+    return smul(result, unit_of(dims)) if dims else result
+
+
+def _rank_exact_or_float(mag) -> int:
+    arr = _numeric_array(mag)
+    if arr is not None and _has_float(mag):
+        import numpy as np
+
+        s = np.linalg.svd(arr, compute_uv=False)
+        return int((s > _EIG_TOLERANCE * s[0]).sum()) if s.size and s[0] > 0 else 0
+    return mag.rank(simplify=True)
+
+
+def solve_least_squares(a, b):
+    _need_matrix("solve_least_squares", a)
+    _need_matrix("solve_least_squares", b)
+    if a.rows < a.cols:
+        raise StatementError("Need at least as many rows as columns")
+    if b.rows != a.rows:
+        raise StatementError(f"Right-hand side has {b.rows} rows, matrix has {a.rows}")
+    ma, da = split_units(a)
+    mb, db = split_units(b)
+    _check_symbolic_size(ma)
+    if _rank_exact_or_float(ma) < ma.cols:
+        raise StatementError("Matrix does not have full column rank")
+    arr_a, arr_b = _numeric_array(ma), _numeric_array(mb)
+    if arr_a is not None and arr_b is not None and (_has_float(ma) or _has_float(mb)):
+        import numpy as np
+
+        x = _float_matrix(np.linalg.lstsq(arr_a, arr_b, rcond=None)[0])
+    else:
+        t = ma.H if any(e.has(sp.I) for e in ma) else ma.T
+        x = wrap((t * ma).inv() * (t * mb))
+    exps = dict(db)
+    for dim, exp in da:
+        exps[dim] = exps.get(dim, 0) - exp
+    return attach_units(x, tuple(sorted((d, e) for d, e in exps.items() if e != 0)))
+
 
 MATRIX_BUILTINS = {
     "_mat": make_matrix, "_c": keep_cell, "_row": make_row, "_idx": index, 
@@ -568,4 +837,6 @@ MATRIX_BUILTINS = {
     "solve_system": solve_system, "dot": dot, "cross": cross, "hadamard": hadamard,
     "eye": eye, "zeros": zeros, "ones": ones, "diag": diag,
     "nrows": nrows, "ncols": ncols, "len": length,
+    "eigenvalues": eigenvalues, "eigenvectors": eigenvectors, "rank": rank, "norm": norm,
+    "solve_least_squares": solve_least_squares,
 }

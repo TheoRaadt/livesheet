@@ -191,6 +191,7 @@ def _parse_table(text: str) -> Statement | None:
         return None  # ordinary evaluation of a name called 'table'
     if _split_eval(rest) is not None:
         raise StatementError("table takes no '='")
+    _check_brackets(rest)
     columns = []
     for part in _split_top_level(rest):
         expr, unit = _split_column_unit(part.strip())
@@ -199,6 +200,19 @@ def _parse_table(text: str) -> Statement | None:
     if not columns:
         raise StatementError("table needs at least one column")
     return Statement("table", columns=columns)
+
+
+def _check_brackets(text: str) -> None:
+    """Raise a clear StatementError when brackets are unbalanced or misordered."""
+    pairs = {")": "(", "]": "[", "}": "{"}
+    stack: list[str] = []
+    for ch in text:
+        if ch in "([{":
+            stack.append(ch)
+        elif ch in pairs and (not stack or stack.pop() != pairs[ch]):
+            raise StatementError("Unbalanced brackets")
+    if stack:
+        raise StatementError("Unbalanced brackets")
 
 
 def _split_top_level(text: str) -> list[str]:
