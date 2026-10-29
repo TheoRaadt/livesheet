@@ -577,6 +577,18 @@ class Worksheet(QGraphicsScene):
         port_hit = None
         if isinstance(region, ComponentRegion):
             port_hit = region.port_at(region.mapFromScene(pos))
+        # "Connect…" target (spec 009 + D1 fix): prefer the exact port terminal under the
+        # cursor; otherwise, for any right-clicked ComponentRegion that has at least one port,
+        # fall back to its first output port (or first input port, if it has no outputs) so the
+        # dialog is reachable without needing a pixel-precise hit on the tiny terminal --
+        # mirroring how "Edit as grid..." (spec 008) is offered for a whole MathRegion rather
+        # than requiring a pixel-precise hit.
+        connect_target = port_hit
+        if connect_target is None and isinstance(region, ComponentRegion):
+            if region._outputs:
+                connect_target = ("output", region._outputs[0])
+            elif region._inputs:
+                connect_target = ("input", region._inputs[0])
         menu = QMenu()
         plot_here = menu.addAction("Plot here")
         # "Matrix here" (spec 008): only offered when the right-click did not land on an existing
@@ -588,9 +600,11 @@ class Worksheet(QGraphicsScene):
 
             if decompose_matrix_text(region.source) is not None:
                 edit_as_grid = menu.addAction("Edit as grid...")
-        # "Connect…" (spec 009): right-clicking directly on a port terminal opens the generic
-        # pick-from-a-list dialog -- the primary, always-available way to create a wire.
-        connect_action = menu.addAction("Connect…") if port_hit is not None else None
+        # "Connect…" (spec 009): offered whenever the right-click lands on a port terminal, or
+        # anywhere else on a ComponentRegion that has a port to default to (D1 fix) -- the
+        # generic pick-from-a-list dialog that is the primary, always-available way to create a
+        # wire without needing pixel-perfect port targeting.
+        connect_action = menu.addAction("Connect…") if connect_target is not None else None
         chosen = menu.exec(event.screenPos())
         if chosen is plot_here:
             self.insert_plot_at(pos)
@@ -599,7 +613,7 @@ class Worksheet(QGraphicsScene):
         elif edit_as_grid is not None and chosen is edit_as_grid:
             self._open_matrix_dialog(region)
         elif connect_action is not None and chosen is connect_action:
-            self._open_connect_dialog(region, port_hit[0], port_hit[1])
+            self._open_connect_dialog(region, connect_target[0], connect_target[1])
         event.accept()
 
     def mousePressEvent(self, event) -> None:
