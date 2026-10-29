@@ -6,6 +6,7 @@ from PySide6.QtCore import QPointF, QRectF, Qt, Signal
 from PySide6.QtGui import (
     QColor,
     QFont,
+    QFontMetricsF,
     QKeyEvent,
     QPainter,
     QPen,
@@ -18,7 +19,7 @@ from PySide6.QtWidgets import (
     QStyleOptionGraphicsItem,
 )
 
-from ..engine import RegionResult
+from ..engine import RegionResult, wiring
 from ..engine.formatting import format_grid, format_table
 from .keys import colon_edit
 from .pretty import display_source, pretty_source_html
@@ -334,4 +335,204 @@ def _esc(text: str) -> str:
     return text.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
 
 
-__all__ = ["Region", "MathRegion", "TextRegion", "snap", "GRID"]
+# -- components (spec 009) ---------------------------------------------------------------------
+
+HEADER_H = 18.0
+SUMMARY_H = 14.0
+ROW_H = 16.0
+PORT_R = 3.5
+LABEL_GAP = 6.0
+MIN_BODY_W = 80.0
+
+_COMPONENT_HEADER_FONT = QFont()
+_COMPONENT_HEADER_FONT.setFamilies(["Helvetica Neue", "Segoe UI", "Arial", "sans-serif"])
+_COMPONENT_HEADER_FONT.setPointSize(10)
+_COMPONENT_HEADER_FONT.setBold(True)
+
+_COMPONENT_LABEL_FONT = QFont()
+_COMPONENT_LABEL_FONT.setFamilies(["Helvetica Neue", "Segoe UI", "Arial", "sans-serif"])
+_COMPONENT_LABEL_FONT.setPointSize(9)
+
+
+class ComponentRegion(Region):
+    """A labelled box with named input/output ports (spec 009): a self-contained calculation
+    step, wired to other such boxes rather than defining/using ordinary sheet variables.
+
+    Unlike ``MathRegion``/``TextRegion``/``PlotRegion`` there is no inline text editor: the box
+    is fully configured by the "Add Component" dialog at creation time (``componentdialog.py``)
+    and auto-sizes to fit its header, longest port label and configuration summary -- it is not
+    user-resizable in this spec.
+    """
+
+    kind = "component"
+
+    def __init__(self, component_name: str = "", component_kind: str = "value",
+                 config: dict[str, str] | None = None):
+        super().__init__()
+        self.component_name = component_name or "Comp"
+        self.component_kind = component_kind
+        self.config: dict[str, str] = dict(config or {})
+        self.result = None   # engine.wiring.ComponentResult | None
+        self.editor.setVisible(False)   # no inline text editor for a component
+        self._inputs: list[str] = []
+        self._outputs: list[str] = []
+        self._summary = ""
+        self._box_w = MIN_BODY_W
+        self._box_h = HEADER_H + ROW_H
+        self._left_margin = 0.0
+        self._right_margin = 0.0
+        self._layout()
+
+    # -- Region contract -----------------------------------------------------------------
+
+    def text(self) -> str:
+        return ""   # component state round-trips via component_name/component_kind/config
+
+    def is_empty(self) -> bool:
+        return False   # a placed component is always fully configured (dialog OK, never blank)
+
+    def start_editing(self, scene_pos: QPointF | None = None) -> None:
+        pass   # no inline text editor; Enter-on-selected-component is a no-op
+
+    def mouseDoubleClickEvent(self, event) -> None:
+        event.accept()   # swallow the generic "start inline edit" double-click
+
+    # -- configuration / layout -----------------------------------------------------------
+
+    def set_name(self, name: str) -> None:
+        self.component_name = name
+        self._layout()
+
+    def set_config(self, config: dict[str, str]) -> None:
+        self.config = dict(config)
+        self._layout()
+
+    def _config_summary(self) -> str:
+        if self.component_kind == "value":
+            return f"expr: {self.config.get('expr', '')}"
+        if self.component_kind == "formula":
+            return f"({self.config.get('inputs', '')}) = {self.config.get('expr', '')}"
+        return ""
+
+    def _layout(self) -> None:
+        self.prepareGeometryChange()
+        self._inputs = [p for p, _required in wiring.input_ports(self.component_kind, self.config)]
+        self._outputs = wiring.output_ports(self.component_kind, self.config)
+        self._summary = self._config_summary()
+        header_metrics = QFontMetricsF(_COMPONENT_HEADER_FONT)
+        label_metrics = QFontMetricsF(_COMPONENT_LABEL_FONT)
+        header_text = f"{self.component_name}: {self.component_kind}"
+        header_w = header_metrics.horizontalAdvance(header_text) + 2 * PAD
+        summary_w = (label_metrics.horizontalAdvance(self._summary) + 2 * PAD) if self._summary else 0.0
+        self._box_w = max(header_w, summary_w, MIN_BODY_W)
+        rows = max(1, len(self._inputs), len(self._outputs))
+        self._box_h = HEADER_H + (SUMMARY_H if self._summary else 0.0) + rows * ROW_H + PAD
+        left_label_w = max((label_metrics.horizontalAdvance(n) for n in self._inputs), default=0.0)
+        right_label_w = max((label_metrics.horizontalAdvance(n) for n in self._outputs), default=0.0)
+        self._left_margin = (left_label_w + LABEL_GAP + 2 * PORT_R) if self._inputs else 0.0
+        self._right_margin = (right_label_w + LABEL_GAP + 2 * PORT_R) if self._outputs else 0.0
+        self.update()
+
+    # -- geometry -------------------------------------------------------------------------
+
+    def _box_rect(self) -> QRectF:
+        return QRectF(0, 0, self._box_w, self._box_h)
+
+    def boundingRect(self) -> QRectF:
+        return self._box_rect().adjusted(-self._left_margin, -2, self._right_margin, 2)
+
+    def content_rect(self) -> QRectF:
+        return self._box_rect()
+
+    def _row_top(self) -> float:
+        return HEADER_H + (SUMMARY_H if self._summary else 0.0)
+
+    def _row_y(self, i: int) -> float:
+        return self._row_top() + ROW_H * i + ROW_H / 2
+
+    def _input_pos(self, i: int) -> QPointF:
+        return QPointF(0.0, self._row_y(i))
+
+    def _output_pos(self, i: int) -> QPointF:
+        return QPointF(self._box_w, self._row_y(i))
+
+    def port_at(self, local_pos: QPointF, tolerance: float = 7.0) -> tuple[str, str] | None:
+        """``("input"|"output", port_name)`` for the port terminal nearest ``local_pos`` (item
+        coordinates), within ``tolerance``; ``None`` when nothing is close enough -- used both by
+        the drag-to-connect gesture and by the "Connect…" context-menu action (spec 009)."""
+        for i, name in enumerate(self._inputs):
+            d = self._input_pos(i) - local_pos
+            if (d.x() ** 2 + d.y() ** 2) ** 0.5 <= tolerance:
+                return ("input", name)
+        for i, name in enumerate(self._outputs):
+            d = self._output_pos(i) - local_pos
+            if (d.x() ** 2 + d.y() ** 2) ** 0.5 <= tolerance:
+                return ("output", name)
+        return None
+
+    def port_scene_pos(self, side: str, name: str) -> QPointF:
+        """Scene position of a named port's terminal centre, for wire drawing. Falls back to the
+        box edge's vertical centre when ``name`` is not currently a declared port of this
+        component's kind -- keeps a wire from a corrupted/forward-compatible file (unrecognised
+        ``component_kind``, see spec 009's edge cases) drawable rather than crashing."""
+        ports = self._inputs if side == "input" else self._outputs
+        if name in ports:
+            i = ports.index(name)
+            local = self._input_pos(i) if side == "input" else self._output_pos(i)
+        else:
+            local = QPointF(0.0 if side == "input" else self._box_w, self._box_h / 2)
+        return self.mapToScene(local)
+
+    # -- painting -------------------------------------------------------------------------
+
+    def paint(self, painter: QPainter, option: QStyleOptionGraphicsItem, widget=None) -> None:
+        if self.scene() is None:
+            return
+        rect = self._box_rect()
+        painter.fillRect(rect, COLOR_ERROR_BG if self._has_error else QColor("#ffffff"))
+        painter.setPen(QPen(COLOR_FRAME, 1.5 if self.isSelected() else 1))
+        painter.setBrush(Qt.BrushStyle.NoBrush)
+        painter.drawRect(rect)
+
+        painter.setFont(_COMPONENT_HEADER_FONT)
+        painter.setPen(QColor("#222222"))
+        header_rect = QRectF(rect.left() + PAD, rect.top(), rect.width() - 2 * PAD, HEADER_H)
+        painter.drawText(header_rect, Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter,
+                          f"{self.component_name}: {self.component_kind}")
+        painter.drawLine(QPointF(rect.left(), rect.top() + HEADER_H),
+                          QPointF(rect.right(), rect.top() + HEADER_H))
+
+        if self._summary:
+            painter.setFont(_COMPONENT_LABEL_FONT)
+            painter.setPen(QColor("#666666"))
+            summary_rect = QRectF(rect.left() + PAD, rect.top() + HEADER_H,
+                                   rect.width() - 2 * PAD, SUMMARY_H)
+            painter.drawText(summary_rect, Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter,
+                              self._summary)
+
+        painter.setFont(_COMPONENT_LABEL_FONT)
+        painter.setPen(QColor("#222222"))
+        painter.setBrush(QColor(COLOR_FRAME))
+        for i, name in enumerate(self._inputs):
+            pos = self._input_pos(i)
+            painter.drawEllipse(pos, PORT_R, PORT_R)
+            label_rect = QRectF(rect.left() - self._left_margin, pos.y() - 7,
+                                 self._left_margin - LABEL_GAP, 14)
+            painter.drawText(label_rect, Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter, name)
+        for i, name in enumerate(self._outputs):
+            pos = self._output_pos(i)
+            painter.drawEllipse(pos, PORT_R, PORT_R)
+            label_rect = QRectF(rect.right() + LABEL_GAP, pos.y() - 7,
+                                 self._right_margin - LABEL_GAP, 14)
+            painter.drawText(label_rect, Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter, name)
+
+    # -- result / error state --------------------------------------------------------------
+
+    def set_result(self, result) -> None:
+        self.result = result
+        self._has_error = bool(result and result.status == "error")
+        self.setToolTip(result.error if result and result.status == "error" else "")
+        self.update()
+
+
+__all__ = ["Region", "MathRegion", "TextRegion", "ComponentRegion", "snap", "GRID"]

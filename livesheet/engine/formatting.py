@@ -123,6 +123,12 @@ class SheetPrinter(StrPrinter):
     def _print_Abs(self, expr):
         return f"|{self._print(expr.args[0])}|"
 
+    def _print_log(self, expr):
+        # SymPy's log() node is always natural log (a user-entered base-10 'log(x)' is
+        # rewritten to log(x)/log(10) on input, see evaluator._log); display it as 'ln'
+        # so it never collides with this project's own base-10 'log' convention.
+        return f"ln({self._print(expr.args[0])})"
+
 
 def format_expr(expr, sig: int = DEFAULT_SIGNIFICANT) -> str:
     """Pretty one-line text for a symbolic expression."""

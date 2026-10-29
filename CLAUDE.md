@@ -16,11 +16,11 @@ Vision: combine the engineering-calculation workflow of Mathcad-style tools, the
 
 ## Manager role (main session)
 The main session is the manager and does not write feature code itself. Workflow per feature:
-1. mathcad-specialist / mathematica-specialist / maple-specialist write a spec in docs/board/specs/.
+1. mathcad-specialist / gui-specialist / modeling-specialist write a spec in docs/board/specs/.
 2. Manager IP-reviews the spec against docs/IP-POLICY.md.
 3. developer implements one approved spec; tester writes independent tests from the spec and reports in docs/board/reviews/.
 4. Developer fixes, manager merges and commits.
-Agents share state only via docs/board/ (backlog, specs, reviews, log.md, decisions.md). Open questions go to docs/board/decisions.md and are asked to Theo.
+Agents share their durable state via docs/board/ (backlog, specs, reviews, log.md, decisions.md) — this remains the record the manager and future sessions read. Since 2026-10-29, agents may also message each other directly (ListAgents/SendMessage) for quick coordination instead of always routing through the manager. This does not relax the IP gate: the developer only ever implements from a spec that already passed the manager's IP review in docs/board/specs/, never from something said only in chat; any chat clarification that changes a spec or an implementation must be written back into docs/board/ (the spec, or a log.md line) so the trail stays complete. Open questions go to docs/board/decisions.md and are asked to Theo.
 
 ## Hard rules
 - Clean-room: no vendor code, help text, examples, assets, file formats, names or 1:1 keyword sets. Developer and tester never read vendor docs; only specialists do, from public sources.

@@ -4,8 +4,17 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from PySide6.QtCore import QMarginsF, QRectF, QSettings, QStandardPaths, Qt, QTimer
-from PySide6.QtGui import QAction, QCloseEvent, QKeySequence, QPageLayout, QPageSize, QPainter, QPdfWriter
+from PySide6.QtCore import QMarginsF, QRectF, QSettings, QStandardPaths, Qt, QTimer, Signal
+from PySide6.QtGui import (
+    QAction,
+    QActionGroup,
+    QCloseEvent,
+    QKeySequence,
+    QPageLayout,
+    QPageSize,
+    QPainter,
+    QPdfWriter,
+)
 from PySide6.QtWidgets import (
     QApplication,
     QFileDialog,
@@ -20,7 +29,11 @@ from .. import __version__
 from ..document import FILE_SUFFIX, DocumentError, SheetDocument
 from .paths import default_save_path, remembered_dir
 from .regions import MathRegion
+from .sidepanel import MATH_TOKENS, SidePanel
+from .theme import MODE_DARK, MODE_LIGHT, MODE_SYSTEM, apply_theme
 from .worksheet import PAGE_WIDTH, Worksheet, WorksheetView
+
+APPEARANCE_MODES = ((MODE_SYSTEM, "Follow System"), (MODE_LIGHT, "Light"), (MODE_DARK, "Dark"))
 
 FILE_FILTER = f"LiveSheet worksheets (*{FILE_SUFFIX});;All files (*)"
 
@@ -53,6 +66,16 @@ Ctrl+wheel zooms.</p>
 """
 
 
+class _ClickableLabel(QLabel):
+    """A plain status-bar label that also reacts to a left click (spec 007's precision label)."""
+
+    clicked = Signal()
+
+    def mousePressEvent(self, event) -> None:
+        self.clicked.emit()
+        super().mousePressEvent(event)
+
+
 class MainWindow(QMainWindow):
     def __init__(self, path: str | None = None):
         super().__init__()
@@ -62,10 +85,21 @@ class MainWindow(QMainWindow):
         self.path: Path | None = None
         self.settings = QSettings("LiveSheet", "LiveSheet")
 
+        self._eval_label = QLabel("Ready")
+        self._eval_label.setObjectName("status-eval-label")
+        self._precision_label = _ClickableLabel()
+        self._precision_label.setObjectName("status-precision-label")
+        self._precision_label.setCursor(Qt.CursorShape.PointingHandCursor)
+        self._precision_label.clicked.connect(self.set_precision)
         self._zoom_label = QLabel("100%")
+        self._zoom_label.setObjectName("status-zoom-label")
+        self.statusBar().addPermanentWidget(self._eval_label)
+        self.statusBar().addPermanentWidget(self._precision_label)
         self.statusBar().addPermanentWidget(self._zoom_label)
+        self._refresh_precision_label()
         self.sheet.statusMessage.connect(lambda m: self.statusBar().showMessage(m))
         self.sheet.modifiedChanged.connect(lambda _: self._update_title())
+        self.sheet.evaluationFinished.connect(self._on_evaluation_finished)
         self.view.zoomChanged.connect(lambda z: self._zoom_label.setText(f"{round(z * 100)}%"))
 
         self._build_actions()
@@ -76,6 +110,34 @@ class MainWindow(QMainWindow):
         geometry = self.settings.value("geometry")
         if geometry is not None:
             self.restoreGeometry(geometry)
+        window_state = self.settings.value("window_state")
+        if window_state is not None:
+            self.restoreState(window_state)
+            self._repair_floating_toolbars()
+
+    def _repair_floating_toolbars(self) -> None:
+        """Defend against a corrupted saved layout (spec 007 D1): a toolbar that a live drag
+        left floating -- rather than cleanly redocked -- gets its saved state replayed by
+        ``restoreState()`` on every future launch, including the "floating" bit, independent of
+        the `setFloatable(False)` guard set at construction time (that guard only stops a *new*
+        drag from detaching a toolbar; it does not retroactively validate bytes an old/corrupted
+        session already saved). A floating toolbar ends up rendered overlapping the docked
+        toolbar area instead of as a clean second row, which is exactly the squashed/clipped/
+        overlapping symptom reported against a live reorder. If restoring the saved state left
+        either toolbar floating, the whole toolbar layout is reset to the one default, known-good
+        arrangement (Standard above Math) rather than attempting to reposition just the one
+        floating toolbar, since there is no reliable saved position to fall back to once the
+        layout is known to be corrupted.
+        """
+        if not (self.standard_toolbar.isFloating() or self.math_toolbar.isFloating()):
+            return
+        for tb in (self.standard_toolbar, self.math_toolbar):
+            self.removeToolBar(tb)
+        self.addToolBar(self.standard_toolbar)
+        self.addToolBarBreak()
+        self.addToolBar(self.math_toolbar)
+        self.standard_toolbar.show()
+        self.math_toolbar.show()
 
     # -- UI construction --------------------------------------------------------
 
@@ -93,14 +155,18 @@ class MainWindow(QMainWindow):
         mb = self.menuBar()
 
         m = mb.addMenu("&File")
-        m.addAction(self._action("&New", self.new_file, SK.New))
-        m.addAction(self._action("&Open…", self.open_file, SK.Open))
+        self.action_new = self._action("&New", self.new_file, SK.New)
+        m.addAction(self.action_new)
+        self.action_open = self._action("&Open…", self.open_file, SK.Open)
+        m.addAction(self.action_open)
         self.recent_menu = m.addMenu("Open &Recent")
         self._refresh_recent()
         m.addSeparator()
-        m.addAction(self._action("&Save", self.save_file, SK.Save))
+        self.action_save = self._action("&Save", self.save_file, SK.Save)
+        m.addAction(self.action_save)
         m.addAction(self._action("Save &As…", self.save_file_as, SK.SaveAs))
-        m.addAction(self._action("&Export PDF…", self.export_pdf, "Ctrl+Shift+E"))
+        self.action_export_pdf = self._action("&Export PDF…", self.export_pdf, "Ctrl+Shift+E")
+        m.addAction(self.action_export_pdf)
         m.addSeparator()
         m.addAction(self._action("&Quit", self.close, SK.Quit))
 
@@ -112,38 +178,98 @@ class MainWindow(QMainWindow):
         m.addAction(self._action("&Math Region", lambda: self.sheet.insert_region("math"), "Ctrl+M"))
         m.addAction(self._action("&Text Region", lambda: self.sheet.insert_region("text"), "Ctrl+T"))
         m.addAction(self._action("&Plot", lambda: self.sheet.insert_region("plot"), "Ctrl+Shift+P"))
+        m.addAction(self._action("&Matrix…",
+                                  lambda: self.sheet.insert_matrix_at(self.sheet.crosshair.pos()),
+                                  "Ctrl+Shift+M"))
+        m.addAction(self._action("&Component…",
+                                  lambda: self.sheet.insert_component_at(self.sheet.crosshair.pos()),
+                                  "Ctrl+Shift+C"))
         m.addSeparator()
         for label, token in ((":=  Definition", ":= "), ("≡  Global definition", "≡ "),
                              ("=  Evaluate", " ="), ("→  Symbolic", " → ")):
             m.addAction(self._action(label, lambda _=False, t=token: self.insert_token(t)))
 
         m = mb.addMenu("&Calculate")
-        m.addAction(self._action("&Recalculate", self.sheet.recalculate, "F9"))
+        self.action_recalculate = self._action("&Recalculate", self.sheet.recalculate, "F9")
+        m.addAction(self.action_recalculate)
         m.addAction(self._action("Result &Precision…", self.set_precision))
 
-        m = mb.addMenu("&View")
-        m.addAction(self._action("Zoom &In", lambda: self.view.set_zoom(self.view.zoom() * 1.1), SK.ZoomIn))
-        m.addAction(self._action("Zoom &Out", lambda: self.view.set_zoom(self.view.zoom() / 1.1), SK.ZoomOut))
-        m.addAction(self._action("&Actual Size", lambda: self.view.set_zoom(1.0), "Ctrl+0"))
+        view_menu = mb.addMenu("&View")
+        view_menu.addAction(self._action("Zoom &In", lambda: self.view.set_zoom(self.view.zoom() * 1.1), SK.ZoomIn))
+        view_menu.addAction(self._action("Zoom &Out", lambda: self.view.set_zoom(self.view.zoom() / 1.1), SK.ZoomOut))
+        view_menu.addAction(self._action("&Actual Size", lambda: self.view.set_zoom(1.0), "Ctrl+0"))
 
         m = mb.addMenu("&Help")
         m.addAction(self._action("&Syntax && Keys", self.show_help, SK.HelpContents))
         m.addAction(self._action("&About LiveSheet", self.show_about))
 
+        # -- toolbars (spec 007, phase G1): the Standard toolbar reuses the exact File/Calculate
+        # QAction objects above, so a toolbar click and the matching menu click are always the
+        # identical command, not two separate implementations of it.
+        self.standard_toolbar = QToolBar("Standard", self)
+        self.standard_toolbar.setObjectName("standard-toolbar")
+        # Movable (can be dragged to reorder/relocate) but not floatable: letting a toolbar
+        # become a free-floating window is what let a live in-area drag drop it into a broken,
+        # overlapping-with-the-docked-area floating state (see docs/board/log.md, spec 007 D1).
+        # Reordering between docked positions still works with floating disabled.
+        self.standard_toolbar.setFloatable(False)
+        self.addToolBar(self.standard_toolbar)
+        self.standard_toolbar.addAction(self.action_new)
+        self.standard_toolbar.addAction(self.action_open)
+        self.standard_toolbar.addAction(self.action_save)
+        self.standard_toolbar.addSeparator()
+        self.standard_toolbar.addAction(self.action_export_pdf)
+        self.standard_toolbar.addSeparator()
+        self.standard_toolbar.addAction(self.action_recalculate)
+        self.addToolBarBreak()   # force the Math toolbar onto its own row, below Standard
+
         tb = QToolBar("Math", self)
         tb.setObjectName("math-toolbar")
-        tb.setMovable(False)
+        tb.setFloatable(False)   # see the comment on standard_toolbar above
         self.addToolBar(tb)
         tb.addAction(self._action("Text", lambda: self.sheet.insert_region("text"), tip="Insert text region"))
         tb.addSeparator()
-        for label, token, tip in ((":=", ":= ", "Definition"), ("≡", "≡ ", "Global definition"),
-                                  ("=", " =", "Evaluate numerically"), ("→", " → ", "Evaluate symbolically"),
-                                  ("√", "sqrt(", "Square root"), ("x²", "^2", "Square"),
-                                  ("π", "pi", "Pi"), ("d/dx", "diff(", "Derivative: diff(expr, x)"),
-                                  ("∫", "integrate(", "Integral: integrate(expr, x) or (x, a, b)")):
+        for _category, label, token, tip in MATH_TOKENS:
             act = self._action(label, lambda _=False, t=token: self.insert_token(t), tip=tip)
             act.setToolTip(tip)
             tb.addAction(act)
+        self.math_toolbar = tb
+
+        # -- side panel (phase G2) --------------------------------------------------
+        self.side_panel = SidePanel(self.insert_token, self)
+        self.addDockWidget(Qt.DockWidgetArea.LeftDockWidgetArea, self.side_panel)
+        self.view.setMinimumWidth(400)   # the canvas keeps >=400px even at the dock's max width
+        # QMainWindow.saveState() persists dock geometry/visibility but not a child QTabWidget's
+        # own current-tab state, so the active Symbols/Outline/Data tab is tracked separately.
+        self.side_panel.tabs.setCurrentIndex(self.settings.value("side_panel_tab", 0, type=int))
+        self.side_panel.tabs.currentChanged.connect(
+            lambda i: self.settings.setValue("side_panel_tab", i))
+
+        view_menu.addSeparator()
+        standard_toggle = self.standard_toolbar.toggleViewAction()
+        standard_toggle.setText("Standard Toolbar")
+        view_menu.addAction(standard_toggle)
+        math_toggle = self.math_toolbar.toggleViewAction()
+        math_toggle.setText("Math Toolbar")
+        view_menu.addAction(math_toggle)
+        side_panel_toggle = self.side_panel.toggleViewAction()
+        side_panel_toggle.setText("Side Panel")
+        view_menu.addAction(side_panel_toggle)
+
+        # -- appearance (phase G3) --------------------------------------------------
+        appearance_menu = view_menu.addMenu("Appearance")
+        appearance_group = QActionGroup(self)
+        appearance_group.setExclusive(True)
+        current = self.settings.value("appearance", MODE_SYSTEM, type=str)
+        self._appearance_actions: dict[str, QAction] = {}
+        for mode, label in APPEARANCE_MODES:
+            act = QAction(label, self)
+            act.setCheckable(True)
+            act.setChecked(mode == current)
+            act.triggered.connect(lambda _checked=False, m=mode: self._set_appearance(m))
+            appearance_group.addAction(act)
+            appearance_menu.addAction(act)
+            self._appearance_actions[mode] = act
 
     # -- commands ------------------------------------------------------------------
 
@@ -166,6 +292,32 @@ class MainWindow(QMainWindow):
                                          self.sheet.significant, 2, 15)
         if ok:
             self.sheet.set_significant(digits)
+            self._refresh_precision_label()
+
+    def _refresh_precision_label(self) -> None:
+        self._precision_label.setText(f"{self.sheet.significant} sig. figs")
+
+    def _on_evaluation_finished(self, errors: int, total: int, elapsed_ms: float) -> None:
+        """Update the permanent evaluation-status indicator (spec 007, phase G1).
+
+        A pass measured at over 300 ms flashes "Calculating…" for one event-loop tick before the
+        final Ready/N-errors text, rather than literally live during the (synchronous, blocking)
+        pass itself -- genuine mid-pass progress would need the engine call to be interruptible or
+        run off the UI thread, which this chrome-only spec does not add. A pass under the
+        threshold goes straight to its final text with no flicker.
+        """
+        text = "Ready" if errors == 0 else f"{errors} error" if errors == 1 else f"{errors} errors"
+        if elapsed_ms > 300:
+            self._eval_label.setText("Calculating…")
+            QTimer.singleShot(0, lambda: self._eval_label.setText(text))
+        else:
+            self._eval_label.setText(text)
+
+    def _set_appearance(self, mode: str) -> None:
+        self.settings.setValue("appearance", mode)
+        app = QApplication.instance()
+        if app is not None:
+            apply_theme(app, mode)
 
     def new_file(self) -> None:
         if not self._maybe_save():
@@ -191,6 +343,7 @@ class MainWindow(QMainWindow):
             QMessageBox.critical(self, "Open failed", f"Could not open {path.name}:\n{exc}")
             return
         self.sheet.load_document(doc)
+        self._refresh_precision_label()
         QTimer.singleShot(0, self._scroll_home)
         self.path = path
         self._add_recent(path)
@@ -304,6 +457,7 @@ class MainWindow(QMainWindow):
     def closeEvent(self, event: QCloseEvent) -> None:
         if self._maybe_save():
             self.settings.setValue("geometry", self.saveGeometry())
+            self.settings.setValue("window_state", self.saveState())
             event.accept()
         else:
             event.ignore()
@@ -347,6 +501,8 @@ def run(argv: list[str]) -> int:
     app = QApplication.instance() or QApplication(argv)
     app.setApplicationName("LiveSheet")
     app.setOrganizationName("LiveSheet")
+    settings = QSettings("LiveSheet", "LiveSheet")
+    apply_theme(app, settings.value("appearance", MODE_SYSTEM, type=str))
     path = next((a for a in argv[1:] if not a.startswith("-")), None)
     win = MainWindow(path)
     win.show()

@@ -129,20 +129,44 @@ def test_paint_plot_manual_limits_excluding_all_data_still_draws_frame():
 # Criterion 25: Insert > Plot, editing, live update, save/reload
 # ---------------------------------------------------------------------------
 
-def test_insert_plot_menu_action_adds_one_region_with_starter_text():
+def test_insert_plot_menu_action_opens_dialog_on_a_blank_region():
+    """Spec 006 criterion 1: Insert > Plot opens the dialog immediately (instead of starting the
+    multi-line text editor with starter text); the region holds no text until Apply/OK."""
+    import unittest.mock as mock
+
+    from livesheet.gui.plotdialog import PlotDialog
+
     app, win = _qt_window()
+    opened = []
+
+    def fake_exec(self):
+        opened.append(self)
+        return None
+
     try:
         insert_menu = next(a.menu() for a in win.menuBar().actions() if a.text() == "&Insert")
         plot_action = next(a for a in insert_menu.actions() if a.text() == "&Plot")
         assert win.sheet.regions() == []
-        plot_action.trigger()
+        with mock.patch.object(PlotDialog, "exec", fake_exec):
+            plot_action.trigger()
         app.processEvents()
         regions = win.sheet.regions()
         assert len(regions) == 1
         region = regions[0]
         assert region.kind == "plot"
-        assert region.source == STARTER_TEXT
-        assert region.editing
+        assert region.source == ""
+        assert not region.editing
+        assert len(opened) == 1
+        dialog = opened[0]
+        assert dialog.region is region
+        assert dialog._is_new_session
+        assert [row["edit"].full_text() for row in dialog._rows] == [""]
+        assert dialog.var_mode_combo.currentIndex() == 0
+        assert dialog.var_existing_edit.text() == ""
+        for edit in (dialog.y_min_edit, dialog.y_max_edit, dialog.x_min_edit, dialog.x_max_edit,
+                     dialog.x_unit_edit, dialog.y_unit_edit, dialog.title_edit,
+                     dialog.x_label_edit, dialog.y_label_edit):
+            assert edit.text() == ""
     finally:
         win.sheet.set_modified(False)
         win.close()
@@ -155,8 +179,9 @@ def test_editing_spec_live_update_and_save_reload(tmp_path):
         v_region = sheet.add_region("math", QPointF(40, 40), SHEET_1[0])
         sheet.add_region("math", QPointF(40, 90), SHEET_1[1])
 
-        plot_region = sheet.insert_plot_at(QPointF(40, 150))  # below both math regions
-        assert plot_region.source == STARTER_TEXT
+        # The raw multi-line editor path (unaffected by spec 006's dialog, used directly here).
+        plot_region = sheet.add_region("plot", QPointF(40, 150), "")
+        plot_region.start_editing()
         plot_region.editor.setPlainText(PLOT_1)
         assert plot_region.source == PLOT_1
         plot_region.finish_editing()

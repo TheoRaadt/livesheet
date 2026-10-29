@@ -33,6 +33,21 @@ def _log(x, base=10):
     return sp.log(x, base)
 
 
+def _needs_variable(name: str, fn):
+    """Wrap a calculus builtin so an expression with >1 free variable and no variable
+    argument gives the same friendly message as the ``-> kw`` keyword form, instead of
+    SymPy's raw (and sometimes multi-line) ``ValueError``."""
+    def wrapper(value, *args, **kwargs):
+        if not args and isinstance(value, sp.Basic):
+            free = getattr(value, "free_symbols", set())
+            if len(free) > 1:
+                raise StatementError(f"'{name}' needs a variable, e.g. → {name}, x")
+        return fn(value, *args, **kwargs)
+
+    wrapper.__name__ = name
+    return wrapper
+
+
 def _builtins() -> dict:
     g: dict = {}
     exec("from sympy import Integer, Float, Rational, Symbol, Function", g)  # noqa: S102 - needed by parse_expr
@@ -49,8 +64,11 @@ def _builtins() -> dict:
         "factorial": sp.factorial, "binomial": sp.binomial, "Gamma": sp.gamma,
         "re": sp.re, "im": sp.im, "conj": sp.conjugate, "arg": sp.arg,
         # calculus / CAS
-        "diff": sp.diff, "integrate": sp.integrate, "limit": sp.limit,
-        "sum": sp.summation, "product": sp.product, "series": sp.series,
+        "diff": _needs_variable("diff", sp.diff),
+        "integrate": _needs_variable("integrate", sp.integrate),
+        "limit": sp.limit,
+        "sum": sp.summation, "product": sp.product,
+        "series": _needs_variable("series", sp.series),
         "solve": sp.solve, "expand": sp.expand, "factor": sp.factor,
         "simplify": sp.simplify, "Eq": sp.Eq,
         # constants
@@ -541,9 +559,19 @@ class Engine:
             return sp.diff(value, sym(0))
         if kw == "integrate":
             return sp.integrate(value, sym(0))
+        if kw == "limit":
+            var = sym(0)
+            point = self.parse(args[1], env) if len(args) > 1 else sp.Integer(0)
+            return sp.limit(value, var, point)
         if kw == "series":
             var = sym(0)
-            order = int(args[1]) if len(args) > 1 else 6
+            if len(args) > 1:
+                try:
+                    order = int(args[1])
+                except ValueError:
+                    raise StatementError("Number of terms must be a whole number") from None
+            else:
+                order = 6
             return sp.series(value, var, 0, order).removeO()
         if kw == "substitute":
             if not args or "=" not in args[0]:

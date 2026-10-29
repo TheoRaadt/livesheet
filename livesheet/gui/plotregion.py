@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from PySide6.QtCore import QPointF, QRectF, Qt
 from PySide6.QtGui import QColor, QFont, QPainter, QPen
-from PySide6.QtWidgets import QStyleOptionGraphicsItem
+from PySide6.QtWidgets import QGraphicsProxyWidget, QPushButton, QStyleOptionGraphicsItem
 
 from ..document import DEFAULT_PLOT_SIZE
 from ..engine import RegionResult
@@ -58,10 +58,22 @@ class PlotRegion(Region):
         self.size_h = float(h) if h else DEFAULT_PLOT_SIZE[1]
         self.result: RegionResult | None = None
         self._resizing: tuple[QPointF, float, float] | None = None
+        # Whether this region currently has a previously-committed, saved spec to fall back to:
+        # used by the dialog's Cancel to decide "discard the new region" vs "revert its text"
+        # (spec 006). True from the start for a region created with real text (e.g. loaded from
+        # a file); set True once a brand-new region's dialog session ends with OK, or once its
+        # raw text editor is committed with non-empty content, exactly like any other region.
+        self.has_baseline = bool(text.strip())
         self.editor.setFont(SPEC_FONT)
         self.editor.setDefaultTextColor(QColor("#222222"))
         self._set_editor_text()
         self.editor.setVisible(False)
+        self._use_dialog_btn = QPushButton("Use dialog...")
+        self._use_dialog_btn.setStyleSheet("font-size: 10px; padding: 1px 6px;")
+        self._use_dialog_btn.clicked.connect(self._on_use_dialog_clicked)
+        self._use_dialog_proxy = QGraphicsProxyWidget(self)
+        self._use_dialog_proxy.setWidget(self._use_dialog_btn)
+        self._use_dialog_proxy.setVisible(False)
 
     # -- content -----------------------------------------------------------------
 
@@ -79,6 +91,7 @@ class PlotRegion(Region):
     def _on_contents_changed(self) -> None:
         if self.editing:
             self.source = self.editor.toPlainText().replace("\u00a0", " ")
+            self._update_use_dialog_control()
         super()._on_contents_changed()
 
     def set_result(self, result: RegionResult | None) -> None:
@@ -99,9 +112,35 @@ class PlotRegion(Region):
     def _enter_edit_display(self) -> None:
         self._set_editor_text()
         self.editor.setVisible(True)
+        self._update_use_dialog_control()
 
     def _leave_edit_display(self) -> None:
         self.editor.setVisible(False)
+        self._use_dialog_proxy.setVisible(False)
+
+    def _update_use_dialog_control(self) -> None:
+        """Keep the raw editor's reciprocal 'Use dialog...' control positioned and enabled only
+        when the current text is representable by the dialog (spec 006)."""
+        from .plotdialog import decompose_plot_text
+
+        ok = decompose_plot_text(self.source) is not None
+        self._use_dialog_btn.setEnabled(ok)
+        self._use_dialog_btn.setToolTip(
+            "" if ok else "Not representable by the dialog (this text uses raw-only options).")
+        rect = self.content_rect()
+        self._use_dialog_proxy.setPos(rect.left(), rect.bottom() + 2)
+        self._use_dialog_proxy.setVisible(True)
+
+    def _on_use_dialog_clicked(self) -> None:
+        self.finish_editing()
+        scene = self.scene()
+        if scene is None:
+            return
+        from .plotdialog import PlotDialog
+
+        parent = scene.views()[0] if scene.views() else None
+        dialog = PlotDialog(self, scene, parent=parent)
+        dialog.exec()
 
     # -- geometry / painting -------------------------------------------------------
 
@@ -115,6 +154,8 @@ class PlotRegion(Region):
         rect = self.chart_rect().adjusted(-1, -1, 1, 1)
         if self.editing:
             rect |= self.content_rect().adjusted(-PAD, -PAD, PAD, PAD)
+            btn_rect = QRectF(self._use_dialog_proxy.pos(), self._use_dialog_btn.sizeHint())
+            rect |= btn_rect.adjusted(-PAD, -PAD, PAD, PAD)
         return rect
 
     def paint(self, painter: QPainter, option: QStyleOptionGraphicsItem, widget=None) -> None:
@@ -150,6 +191,20 @@ class PlotRegion(Region):
             paint_plot(painter, rect, res.plot)
         else:
             paint_message(painter, rect, "", COLOR_ERROR)
+
+    # -- opening the dialog or the raw editor ---------------------------------------------
+
+    def mouseDoubleClickEvent(self, event) -> None:
+        from .plotdialog import PlotDialog, decompose_plot_text
+
+        if decompose_plot_text(self.source) is not None:
+            scene = self.scene()
+            parent = scene.views()[0] if scene and scene.views() else None
+            dialog = PlotDialog(self, scene, parent=parent)
+            dialog.exec()
+            event.accept()
+            return
+        super().mouseDoubleClickEvent(event)
 
     # -- resizing ---------------------------------------------------------------------
 
