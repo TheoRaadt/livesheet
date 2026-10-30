@@ -40,6 +40,24 @@ _MODEL_TAG_RE = re.compile(rf"^(.*?)\s+in\s+({_IDENT})\s*$", re.DOTALL)
 _RELATION_RE = re.compile(r"==|<=|>=|<|>")
 _STATEMENT_OPS = (":=", "≡", "::=", "→")
 
+# ``ode`` line: the left side of the single top-level ``==`` must *start* with a pure
+# ``diff(F(X), X)`` or ``diff(F(X), X, N)`` term (one of its top-level additive terms,
+# the first one); the rest of the left side, if any, follows as an ordinary ``+``/``-``.
+_ODE_LHS_RE = re.compile(
+    rf"^diff\(\s*({_IDENT})\(\s*({_IDENT})\s*\)\s*,\s*({_IDENT})\s*(?:,\s*(\d+)\s*)?\)"
+)
+_ODE_SHAPE_ERROR = "Write the highest derivative alone on the left: diff(name(t), t[, n]) == ..."
+
+# ``start`` line: one condition per comma-separated item, ``f(point) == value`` with an
+# optional run of prime marks on ``f`` giving the derivative order (0 when absent).
+_START_ITEM_RE = re.compile(rf"^({_IDENT})('*)\(\s*(.+?)\s*\)\s*==\s*(.+)$", re.DOTALL)
+_START_SHAPE_ERROR = 'Use "start f(point) == value" (optionally f\'(point) == ..., ...)'
+
+# ``over`` sub-grammar, shared between spec 004's plot blocks and this ODE ``over`` line:
+# ``NAME from A to B [points N]``.
+_SAMPLING_WORDS = ("from", "to", "points")
+_SAMPLING_ERROR = "over needs 'NAME from A to B [points N]'"
+
 _REPLACEMENTS = [
     ("\u00a0", " "), ("≤", "<="), ("≥", ">="),
     ("≔", ":="), ("->", "→"), ("×", "*"), ("·", "*"), ("⋅", "*"), ("÷", "/"),
@@ -69,6 +87,9 @@ class Statement:
     goal: str = ""                # model_result: root | min | max
     relations: list[str] = field(default_factory=list)  # model_require: one text per relation
     plot_lines: list[tuple[str, str]] = field(default_factory=list)  # plot: (keyword, remainder)
+    conditions: list[tuple[str, int, str, str]] = field(default_factory=list)
+    # model_ic: one 4-tuple per condition (function name, derivative order, point text, value text)
+    over_points: str = ""        # model_over: the sampling count text ("" means default)
 
 
 def normalize(text: str) -> str:
@@ -272,6 +293,74 @@ def _split_column_unit(col: str) -> tuple[str, str]:
     return col[: last.start()].strip(), col[last.end():].strip()
 
 
+# -- shared with engine/plotting.py's own ``over`` line (spec 004) ----------------------
+
+def split_top_words(text: str, words: tuple[str, ...]) -> list[tuple[str, str]]:
+    """Split ``text`` at top-level whitespace-delimited ``words``: [("", head), (word, piece), ...]."""
+    pieces: list[tuple[str, list[str]]] = [("", [])]
+    depth = 0
+    for token in re.split(r"(\s+)", text):
+        if token.strip() and depth == 0 and token in words:
+            pieces.append((token, []))
+            continue
+        pieces[-1][1].append(token)
+        depth += sum(token.count(c) for c in "([{") - sum(token.count(c) for c in ")]}")
+    return [(word, "".join(parts).strip()) for word, parts in pieces]
+
+
+def parse_sampling_clause(text: str) -> tuple[str, str, str, str]:
+    """Split ``NAME from A to B [points N]`` into ``(name, a_text, b_text, n_text)``;
+    ``n_text`` is ``""`` when ``points`` is omitted. Shared by spec 004's ``plot`` blocks'
+    own ``over`` line and this module's ODE ``over`` line."""
+    parts = split_top_words(text, _SAMPLING_WORDS)
+    words = [w for w, _ in parts[1:]]
+    head = parts[0][1]
+    if words[:2] != ["from", "to"] or words not in (["from", "to"], ["from", "to", "points"]):
+        raise StatementError(_SAMPLING_ERROR)
+    if not _IDENT_RE.match(head):
+        raise StatementError("over needs a name before 'from'")
+    texts = [t for _, t in parts[1:]]
+    if not all(texts):
+        raise StatementError(_SAMPLING_ERROR)
+    return head, texts[0], texts[1], (texts[2] if len(texts) > 2 else "")
+
+
+# -- ODE systems: ``ode``/``start``/``over``/``evolve`` tagged regions (spec 010) --------
+
+def parse_ode_equation(text: str) -> tuple[str, str, int, str, str]:
+    """Split an ``ode`` line's equation text into ``(function, variable, order, lhs, rhs)``.
+
+    The left side of the equation's single top-level ``==`` must *start* with a pure
+    ``diff(F(X), X)`` or ``diff(F(X), X, N)`` term (the highest derivative being defined by
+    this line); anything else on the left follows as an ordinary ``+``/``-`` addend. Raises
+    ``StatementError`` with a clear message otherwise.
+    """
+    if text.count("==") != 1:
+        raise StatementError(_ODE_SHAPE_ERROR)
+    lhs, rhs = (part.strip() for part in text.split("=="))
+    mt = _ODE_LHS_RE.match(lhs)
+    if mt is None or mt.group(2) != mt.group(3) or not rhs:
+        raise StatementError(_ODE_SHAPE_ERROR)
+    tail = lhs[mt.end():].lstrip()
+    if tail and tail[0] not in "+-":
+        raise StatementError(_ODE_SHAPE_ERROR)
+    order = int(mt.group(4)) if mt.group(4) else 1
+    return mt.group(1), mt.group(2), order, lhs, rhs
+
+
+def _parse_start(rest: str) -> list[tuple[str, int, str, str]]:
+    conditions = []
+    for part in _split_top_level(rest):
+        part = part.strip()
+        mt = _START_ITEM_RE.match(part)
+        if mt is None:
+            raise StatementError(_START_SHAPE_ERROR)
+        conditions.append((mt.group(1), len(mt.group(2)), mt.group(3).strip(), mt.group(4).strip()))
+    if not conditions:
+        raise StatementError(_START_SHAPE_ERROR)
+    return conditions
+
+
 # -- solve models: ``... in <name>`` tagged regions --------------------------------------
 
 def _parse_model(text: str) -> Statement | None:
@@ -296,6 +385,27 @@ def _parse_model(text: str) -> Statement | None:
         return Statement("model_result", model=name, goal="min" if keyword == "least" else "max", expr=rest)
     if keyword in ("accuracy", "steps") and rest:
         return Statement("model_setting", model=name, name=keyword, expr=rest)
+    if keyword == "ode":
+        if not rest:
+            raise StatementError(_ODE_SHAPE_ERROR)
+        parse_ode_equation(rest)  # validate shape now; function/order/variable re-derived at solve time
+        return Statement("model_ode", model=name, expr=rest)
+    if keyword == "start":
+        if not rest:
+            raise StatementError(_START_SHAPE_ERROR)
+        return Statement("model_ic", model=name, conditions=_parse_start(rest))
+    if keyword == "over":
+        if not rest:
+            raise StatementError(_SAMPLING_ERROR)
+        head, a_text, b_text, n_text = parse_sampling_clause(rest)
+        return Statement("model_over", model=name, name=head, expr=a_text, range_end=b_text,
+                         over_points=n_text)
+    if keyword == "evolve":
+        goal_word = rest.strip()
+        if goal_word not in ("", "symbolic", "numeric"):
+            raise StatementError("evolve takes 'symbolic', 'numeric' or nothing")
+        goal = {"": "ode_auto", "symbolic": "ode_symbolic", "numeric": "ode_numeric"}[goal_word]
+        return Statement("model_result", model=name, goal=goal)
     relations = _split_relations(body)
     if relations is None:
         raise StatementError('A relation is required before "in ' + name + '"')

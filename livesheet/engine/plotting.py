@@ -13,7 +13,8 @@ from dataclasses import dataclass, field
 
 import sympy as sp
 
-from .syntax import StatementError
+from .syntax import StatementError, parse_sampling_clause
+from .syntax import split_top_words as _split_top
 from .units import Measured, UnitError, dims_to_text, measure
 
 DEFAULT_POINTS = 101
@@ -156,19 +157,6 @@ def _read_options(lines: list[tuple[str, str]]) -> _Options:
     return opts
 
 
-def _split_top(text: str, words: tuple[str, ...]) -> list[tuple[str, str]]:
-    """Split ``text`` at top-level whitespace-delimited ``words``: [("", head), (word, piece), ...]."""
-    pieces: list[tuple[str, list[str]]] = [("", [])]
-    depth = 0
-    for token in re.split(r"(\s+)", text):
-        if token.strip() and depth == 0 and token in words:
-            pieces.append((token, []))
-            continue
-        pieces[-1][1].append(token)
-        depth += sum(token.count(c) for c in "([{") - sum(token.count(c) for c in ")]}")
-    return [(word, "".join(parts).strip()) for word, parts in pieces]
-
-
 def _real(value: complex) -> float:
     """Real value of a complex number; NaN when not finite or genuinely complex."""
     if math.isnan(value.real) or math.isnan(value.imag):
@@ -229,7 +217,7 @@ class _Builder:
         text = self.opts.over
         parts = _split_top(text, ("from", "to", "points"))
         if len(parts) > 1:
-            return self._sampling(parts)
+            return self._sampling(text)
         if _IDENT_RE.match(text) and isinstance(self.env.get(text), RangeVar):
             rng = self.env[text]
             self.x_name, self.x_text = text, text
@@ -258,21 +246,13 @@ class _Builder:
         self.x_si = [_real(v) for v in values]
         return _Axis(values, dims)
 
-    def _sampling(self, parts: list[tuple[str, str]]) -> _Axis:
-        words = [w for w, _ in parts[1:]]
-        head = parts[0][1]
-        if words[:2] != ["from", "to"] or words not in (["from", "to"], ["from", "to", "points"]):
-            raise StatementError("over needs 'NAME from A to B [points N]'")
-        if not _IDENT_RE.match(head):
-            raise StatementError("over needs a name before 'from'")
-        texts = [t for _, t in parts[1:]]
-        if not all(texts):
-            raise StatementError("over needs 'NAME from A to B [points N]'")
-        start = self._measure_keep(texts[0])
-        end = self._measure_keep(texts[1])
+    def _sampling(self, text: str) -> _Axis:
+        head, a_text, b_text, n_text = parse_sampling_clause(text)
+        start = self._measure_keep(a_text)
+        end = self._measure_keep(b_text)
         if start.dims != end.dims:
             raise UnitError("Units do not match: sampling limits have different units")
-        count = self._point_count(texts[2]) if len(texts) > 2 else DEFAULT_POINTS
+        count = self._point_count(n_text) if n_text else DEFAULT_POINTS
         a, b = (float(_real(_to_complex(m.magnitude))) for m in (start, end))
         if not (math.isfinite(a) and math.isfinite(b)):
             raise StatementError("Sampling limits must be finite real numbers")

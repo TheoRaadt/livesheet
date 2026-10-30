@@ -20,7 +20,7 @@ import re
 
 from .plotting import PlotData, build_plot
 from .formatting import format_expr, format_number, format_value
-from . import matrices, solver
+from . import matrices, odesolver, solver
 from .matrices import MATRIX_BUILTINS, rewrite_brackets, wrap
 from .syntax import Statement, StatementError, parse_statement
 from .units import BASE_UNIT_BY_DIM, UNITS, Measured, UnitError, dims_to_text, measure
@@ -229,12 +229,15 @@ class Engine:
             results[key] = self._run(st, env)
         return results
 
+    _ODE_KINDS = ("model_ode", "model_ic", "model_over")
+
     def _run_model(self, st: Statement, pos: int, key, env: dict, earlier: dict, last_result: dict,
                    broken: dict, results: dict) -> RegionResult:
         try:
             if st.kind != "model_result":
                 if last_result.get(st.model, -1) <= pos:
-                    raise StatementError(f'No result region for model "{st.model}" below this region')
+                    family = "ODE system" if st.kind in self._ODE_KINDS else "model"
+                    raise StatementError(f'No result region for {family} "{st.model}" below this region')
                 earlier.setdefault(st.model, []).append((key, st))
                 if st.kind == "model_require":
                     try:
@@ -250,6 +253,8 @@ class Engine:
             if broken.get(st.model):
                 raise StatementError(f'Fix the errors in the regions of model "{st.model}" first')
             members = earlier.get(st.model, [])
+            if st.goal.startswith("ode"):
+                return self._run_ode_result(st, [m for _, m in members], env)
             if not members:
                 raise StatementError(f'No unknowns declared for model "{st.model}"')
             keys, regions = [k for k, _ in members], [m for _, m in members]
@@ -265,6 +270,51 @@ class Engine:
         except Exception as exc:  # noqa: BLE001 - surface any solver failure in the region
             msg = str(exc).strip().splitlines()[0] if str(exc).strip() else type(exc).__name__
             return RegionResult("error", error=msg[:160])
+
+    def _run_ode_result(self, st: Statement, regions: list[Statement], env: dict) -> RegionResult:
+        """``evolve``/``evolve symbolic``/``evolve numeric``: solve the ODE system made of the
+        ``ode``/``start``/``over``/``accuracy``/``steps`` regions collected above it."""
+        if not regions:
+            raise StatementError(f'No equations declared for ODE system "{st.model}"')
+        over = next((m for m in regions if m.kind == "model_over"), None)
+        order = []
+        for m in regions:
+            if m.kind == "model_ode":
+                fname = odesolver.parse_ode_equation(m.expr)[0]
+                if fname not in order:
+                    order.append(fname)
+        system = odesolver.build(self, st.model, regions, env)
+        outcome = None
+        if st.goal != "ode_numeric":
+            outcome = odesolver.solve_symbolic(system)
+            if outcome is None and st.goal == "ode_symbolic":
+                raise StatementError(f'No closed-form solution found for "{st.model}"')
+        if outcome is not None:
+            for name, lam in outcome.formulas.items():
+                env[name] = lam
+            parts = [f"{name}({system.indep_name}) = " + format_expr(outcome.formulas[name].expr, self.significant)
+                     for name in order if name in outcome.formulas]
+            return RegionResult("ok", "⇒ " + "; ".join(parts))
+        numeric = odesolver.solve_numeric(self, system, over)
+        env[numeric.t_name] = self._numeric_range(numeric)
+        for name, lam in numeric.functions.items():
+            env[name] = lam
+        columns = [numeric.t_name] + [name for name in order if name in numeric.values]
+        rows = []
+        for i, t in enumerate(numeric.t_bare):
+            row = [self._format_measured(Measured(sp.Float(t), numeric.t_dims), "", env)]
+            for name in columns[1:]:
+                row.append(self._format_measured(
+                    Measured(sp.Float(numeric.values[name][i]), numeric.dims[name]), "", env))
+            rows.append(row)
+        return RegionResult("ok", f"⇒ numeric solution, {len(rows)} points", columns=columns, rows=rows)
+
+    @staticmethod
+    def _numeric_range(numeric: "odesolver.NumericOutcome") -> RangeVar:
+        count = len(numeric.t_bare)
+        start = sp.Float(numeric.t_bare[0])
+        step = sp.Float((numeric.t_bare[-1] - numeric.t_bare[0]) / (count - 1)) if count > 1 else sp.Integer(0)
+        return RangeVar(start, step, count, numeric.t_dims)
 
     @staticmethod
     def _mark(results: dict, keys: list, regions: list, mark: str, only: int | None) -> None:

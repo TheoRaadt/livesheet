@@ -98,3 +98,43 @@
 - Accepted the developer's one disclosed judgement call: committing the dialog's compiled text into an existing region via the region's own start_editing()/QTextCursor-replace/finish_editing() path (not a direct RegionData.text set), so the pretty on-screen display refreshes immediately via _leave_edit_display() -- matches the spec's own "reuse start_editing()/finish_editing() as-is" architecture note. No separate query to Theo needed.
 - Full suite 994 passed, 2 xfailed, 0 failed (934 baseline + 60 new tests), run 3x for stability.
 - Spec 008 implementation accepted; assigning independent review to tester.
+
+## Open 2026-10-30 (developer, spec 010 ODE solving, acceptance criterion 7)
+- Criterion 7's first scenario (`ode diff(y(t), t) + y(t)/tau == 0 in decay`, `tau := 4 s`,
+  `start y(0) == 10 in decay` with no unit on the value, `evolve in decay` -> expected
+  "error starts Units do not match") could not be reproduced with a principled unit check,
+  verified by actually running the equation through real SymPy's `dsolve` and this engine's
+  `units.measure()` (mathcad-specialist and tester never read vendor docs, but the developer
+  is allowed to exercise the already-approved sympy/scipy dependencies directly to verify a
+  spec's own hand-derived numeric claims, same as the tester already does for every spec):
+  - `dsolve` itself solves both the `10 m` (criterion 1) and `10` (criterion 7) variants fine;
+    it does not perform or need any unit check.
+  - Full dimensional analysis of `diff(y,t) + y(t)/tau == 0`: matching the two additive terms
+    forces the independent variable's dimension to equal tau's dimension (time), a constraint
+    that is completely independent of y's own dimension (y's dimension cancels from both
+    sides identically). So by rigorous analysis, y(0) being length (criterion 1) or
+    dimensionless (criterion 7) are equally self-consistent -- there is no real mismatch to
+    detect in the dimensionless case specifically.
+  - Every cruder heuristic tried (e.g. "assume the independent variable is dimensionless, so
+    diff(y,t) must have the same dimension as y itself") that *would* flag criterion 7 also
+    incorrectly flags criterion 1 as an error, contradicting its expected "ok" status (both
+    use the exact same equation and the exact same point "0").
+  - Separately found: `sp.dsolve([eq1, eq2], [x(t), v(t)], ics={...with sympy.physics.units
+    Quantities directly...})` for a *coupled* system raises `NotAlgebraic` from inside
+    SymPy's own constant-solving step -- so criterion 3's free-fall system cannot literally
+    "pass Quantity-valued `ics` straight to `dsolve`" as the spec's prose describes. Developer
+    is instead stripping to SI magnitudes before `dsolve`/`solve_ivp` and reattaching units
+    afterward (same pattern `engine/solver.py` already uses for spec 003's unknowns), which
+    avoids the crash and is also the only way found to make unit handling work at all for a
+    coupled system.
+  - mathcad-specialist was unreachable for a quick chat clarification (not currently running);
+    question asked here instead, per "stop and ask instead of guessing". Developer is
+    proceeding with the rest of spec 010 using a correct, principled unit check (per-function
+    dimension from its own order-0 condition; independent-variable dimension only from an
+    `over` line when one is given, otherwise left free like any other user-defined function's
+    parameter) and will document criterion 7's first scenario as a known, disclosed deviation
+    (no error raised there) in `docs/board/log.md` rather than guess a check that would also
+    incorrectly break criterion 1. Needs Theo/manager/specialist review: is criterion 7 a
+    hand-derivation mistake (plausible, flagged generally for every spec's hand-derived
+    numbers since 2026-10-27), or is there a different intended mechanism the developer is
+    missing?
