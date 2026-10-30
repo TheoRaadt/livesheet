@@ -49,6 +49,11 @@ ip-cleanroom skill rule 7.
 - Multiple sessions this run hit a recurring "Qt platform plugin offscreen" hard-abort in the shared `.venv`;
   recreating `.venv` fixes it every time (a targeted reinstall doesn't) — likely multiple agents/sessions
   sharing one `.venv` concurrently, not corruption per se. No permanent fix yet, just a known recovery step.
+- Spec 010: every `evolve`/`evolve symbolic` region costs roughly 0.6-1.2s of blocking main-thread time for
+  the subprocess-spawn timeout guard around `dsolve`, even on the simplest example — so spec 007's
+  "Calculating..." indicator will now visibly trigger on sheets that previously wouldn't show it. Not a bug,
+  just recorded here for a future session to decide whether it needs optimizing (e.g. a warm worker pool
+  instead of spawning fresh each time).
 
 ## Next steps
 1. Theo's real-window pass on specs 006/007/008/009 (see checklist above).

@@ -5,7 +5,8 @@ Every other unit is an ordinary SymPy expression in those base quantities
 (``km`` is ``1000*meter``), so unit arithmetic is plain symbolic algebra and
 dimension checking is delegated to SymPy's SI unit system.
 
-Angles are dimensionless (``deg = pi/180``), as in Mathcad.
+Angles are dimensionless (``deg = pi/180``), which is the common convention for
+engineering-calculation tools.
 """
 
 from __future__ import annotations

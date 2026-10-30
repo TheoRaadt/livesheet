@@ -29,7 +29,7 @@ TRANSFORMS = standard_transformations + (implicit_multiplication, convert_xor)
 
 
 def _log(x, base=10):
-    """Mathcad convention: log is base 10, ln is natural."""
+    """Common engineering-calculator convention: log is base 10, ln is natural log."""
     return sp.log(x, base)
 
 

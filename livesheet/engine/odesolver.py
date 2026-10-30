@@ -13,6 +13,11 @@ import multiprocessing as mp
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
+# Note: the timeout guard below spawns a subprocess, so any standalone script that imports
+# this module (engine/ has no GUI dependency) must itself be guarded with
+# `if __name__ == "__main__":` -- a plain multiprocessing/spawn requirement, not specific to
+# this engine. LiveSheet's own entry points already do this correctly.
+
 import sympy as sp
 from sympy.core.function import AppliedUndef
 
