@@ -20,7 +20,7 @@ import re
 
 from .plotting import PlotData, build_plot
 from .formatting import format_expr, format_number, format_value
-from . import matrices, solver
+from . import matrices, odesolver, solver, truss
 from .matrices import MATRIX_BUILTINS, rewrite_brackets, wrap
 from .syntax import Statement, StatementError, parse_statement
 from .units import BASE_UNIT_BY_DIM, UNITS, Measured, UnitError, dims_to_text, measure
@@ -214,27 +214,38 @@ class Engine:
 
         # Pass 2: everything else, in reading order.
         last_result: dict[str, int] = {}     # model name -> position of its last result region
+        ode_models: set[str] = set()         # model name -> ODE system (own "no result" wording)
+        truss_models: set[str] = set()       # model name -> truss model (own "no result" wording)
         for pos, (key, _) in enumerate(regions):
             st = statements.get(key)
             if st is not None and st.kind == "model_result":
                 last_result[st.model] = pos
+            if st is not None and st.kind in ("model_ode", "model_ic", "model_over"):
+                ode_models.add(st.model)
+            if st is not None and st.kind in ("model_truss_nodes", "model_truss_elements",
+                                              "model_truss_area", "model_truss_modulus",
+                                              "model_support", "model_load"):
+                truss_models.add(st.model)
         earlier: dict[str, list[Statement]] = {}
         for pos, (key, _) in enumerate(regions):
             st = statements.get(key)
             if st is None or _is_global(st):
                 continue
             if st.kind.startswith("model_"):
-                results[key] = self._run_model(st, pos, key, env, earlier, last_result, broken_models, results)
+                results[key] = self._run_model(st, pos, key, env, earlier, last_result, broken_models,
+                                               results, ode_models, truss_models)
                 continue
             results[key] = self._run(st, env)
         return results
 
     def _run_model(self, st: Statement, pos: int, key, env: dict, earlier: dict, last_result: dict,
-                   broken: dict, results: dict) -> RegionResult:
+                   broken: dict, results: dict, ode_models: set[str], truss_models: set[str]) -> RegionResult:
         try:
             if st.kind != "model_result":
                 if last_result.get(st.model, -1) <= pos:
-                    raise StatementError(f'No result region for model "{st.model}" below this region')
+                    kind_word = ("ODE system" if st.model in ode_models
+                                else "truss model" if st.model in truss_models else "model")
+                    raise StatementError(f'No result region for {kind_word} "{st.model}" below this region')
                 earlier.setdefault(st.model, []).append((key, st))
                 if st.kind == "model_require":
                     try:
@@ -250,6 +261,12 @@ class Engine:
             if broken.get(st.model):
                 raise StatementError(f'Fix the errors in the regions of model "{st.model}" first')
             members = earlier.get(st.model, [])
+            if st.goal.startswith("ode"):
+                if not members:
+                    raise StatementError(f'No equations declared for ODE system "{st.model}"')
+                return self._run_ode(st, [m for _, m in members], env)
+            if st.goal == "truss":
+                return self._run_truss(st, [m for _, m in members], env)
             if not members:
                 raise StatementError(f'No unknowns declared for model "{st.model}"')
             keys, regions = [k for k, _ in members], [m for _, m in members]
@@ -286,6 +303,58 @@ class Engine:
             value, dims = solution.objective
             text += "; value = " + self._format_measured(Measured(sp.Float(value), dims), "", env)
         return text
+
+    def _run_ode(self, st: Statement, regions: list[Statement], env: dict) -> RegionResult:
+        system = odesolver.build(self, st.model, regions, env)
+        formulas = None
+        if st.goal != "ode_numeric":
+            formulas = odesolver.solve_symbolic(self, system)
+            if formulas is None and st.goal == "ode_symbolic":
+                raise StatementError(f'No closed-form solution found for ODE system "{st.model}"')
+        if formulas is not None:
+            return self._ode_symbolic_result(system, formulas, env)
+        outcome = odesolver.solve_numeric(self, system)
+        return self._ode_numeric_result(outcome, env)
+
+    def _run_truss(self, st: Statement, regions: list[Statement], env: dict) -> RegionResult:
+        model = truss.build(self, st.model, regions, env)
+        outcome = truss.solve(model)
+        return self._truss_result(st.model, outcome, env)
+
+    def _truss_result(self, name: str, outcome: "truss.Outcome", env: dict) -> RegionResult:
+        env[f"{name}_displacement"] = outcome.displacement
+        env[f"{name}_reaction"] = outcome.reaction
+        env[f"{name}_force"] = outcome.force
+        env[f"{name}_stress"] = outcome.stress
+        max_text = self._format_measured(outcome.max_displacement, "", env)
+        text = (f'⇒ resolved "{name}": {outcome.n_nodes} nodes, {outcome.n_elements} elements; '
+                f'max |displacement| = {max_text}')
+        return RegionResult("ok", text)
+
+    def _ode_symbolic_result(self, system, formulas, env: dict) -> RegionResult:
+        parts = []
+        for name in system.func_names:
+            formula = formulas.formulas[name]
+            env[name] = sp.Lambda((system.indep_symbol,), formula)
+            parts.append(f"{name}({system.indep_name}) = " + format_expr(formula, self.significant))
+        return RegionResult("ok", "⇒ " + "; ".join(parts))
+
+    def _ode_numeric_result(self, outcome, env: dict) -> RegionResult:
+        rng = RangeVar(sp.Float(outcome.x_start), sp.Float(outcome.x_step), outcome.count, outcome.x_dims)
+        env[outcome.indep_name] = rng
+        columns = [outcome.indep_name] + list(outcome.func_names)
+        rows: list[list[str]] = []
+        for k in range(outcome.count):
+            row = [self._format_measured(measure(rng.value(k)), "", env)]
+            for name in outcome.func_names:
+                y_val = sp.Float(outcome.y_values_si[name][k]) * solver._unit_expr(outcome.func_dims[name])
+                row.append(self._format_measured(measure(y_val), "", env))
+            rows.append(row)
+        for name in outcome.func_names:
+            env[name] = outcome.callables[name]
+        label = "point" if outcome.count == 1 else "points"
+        return RegionResult("ok", f"⇒ numeric solution, {outcome.count} {label}",
+                            columns=columns, rows=rows)
 
     def _run(self, st: Statement, env: dict) -> RegionResult:
         self._grid = None

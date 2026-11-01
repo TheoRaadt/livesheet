@@ -20,10 +20,10 @@ from PySide6.QtWidgets import (
 
 from ..document import RegionData, SheetDocument, WireData
 from ..engine import Engine, wiring
+from ..engine.pagination import PAGE_HEIGHT, PAGE_WIDTH, order_key
 from .plotregion import PlotRegion, engine_source
 from .regions import COLOR_ERROR, COLOR_FRAME, GRID, ComponentRegion, MathRegion, Region, TextRegion, snap
 
-PAGE_WIDTH = 820
 MIN_HEIGHT = 1100
 RECALC_DELAY_MS = 200
 HINT_TEXT = "Click to place the cursor, then start typing"
@@ -100,6 +100,44 @@ class WireItem(QGraphicsPathItem):
         painter.drawPolygon(QPolygonF([end, left, right]))
 
 
+class PageBreakItem(QGraphicsItem):
+    """A manual page-break marker (spec 021, phase B): a full-width rule with a small "Page N"
+    label. Not a ``Region`` (no text, never evaluated, not part of ``Worksheet.regions()``).
+    Selectable and deletable but deliberately not movable: to change a break, delete it and insert
+    another. Hidden while the scene is exporting (``Worksheet.printing``)."""
+
+    BAND = 4.0
+
+    def __init__(self, y: float):
+        super().__init__()
+        self.number = 2   # the page that starts at this marker; kept current by the Worksheet
+        self.setZValue(-2)
+        self.setFlag(QGraphicsItem.GraphicsItemFlag.ItemIsSelectable)
+        self.setPos(0.0, float(y))
+
+    @property
+    def y(self) -> float:
+        return self.pos().y()
+
+    def boundingRect(self) -> QRectF:
+        return QRectF(0, -16, PAGE_WIDTH, 32)
+
+    def shape(self) -> QPainterPath:
+        path = QPainterPath()
+        path.addRect(QRectF(0, -self.BAND, PAGE_WIDTH, 2 * self.BAND))
+        return path
+
+    def paint(self, painter: QPainter, option, widget=None) -> None:
+        scene = self.scene()
+        if scene is not None and getattr(scene, "printing", False):
+            return
+        color = QColor("#1f6feb") if self.isSelected() else QColor("#7a8da6")
+        painter.setPen(QPen(color, 2 if self.isSelected() else 1.2))
+        painter.drawLine(QPointF(0, 0), QPointF(PAGE_WIDTH, 0))
+        painter.setPen(QPen(color, 1))
+        painter.drawText(QPointF(PAGE_WIDTH - 60, -4), f"Page {self.number}")
+
+
 class Worksheet(QGraphicsScene):
     modifiedChanged = Signal(bool)
     statusMessage = Signal(str)
@@ -112,6 +150,8 @@ class Worksheet(QGraphicsScene):
         self.addItem(self.crosshair)
         self.crosshair.setPos(GRID * 4, GRID * 4)
         self._modified = False
+        self._page_markers: list[PageBreakItem] = []   # page-break markers (spec 021)
+        self._seq_counter = 0                 # creation sequence for exact-position ties
         self._discarded: list[Region] = []   # removed regions waiting for their single deletion
         self._wires: list[WireItem] = []     # component-to-component connections (spec 009)
         self._wire_drag: tuple[ComponentRegion, str] | None = None   # drag-to-connect source
@@ -147,7 +187,102 @@ class Worksheet(QGraphicsScene):
         return [it for it in self.items() if isinstance(it, Region)]
 
     def ordered_regions(self) -> list[Region]:
-        return sorted(self.regions(), key=lambda r: (r.pos().y(), r.pos().x()))
+        """Regions in evaluation order: page, then left to right, then top to bottom; exact
+        position ties are broken by creation sequence (spec 021)."""
+        breaks = self.page_break_ys()
+        return sorted(self.regions(), key=lambda r: (
+            order_key(r.pos().x(), r.pos().y(), breaks), getattr(r, "_seq", 0)))
+
+    def page_break_ys(self) -> list[float]:
+        """The document's page-break y-coordinates, ascending."""
+        return sorted(m.y for m in self._page_markers)
+
+    def page_markers(self) -> list[PageBreakItem]:
+        return sorted(self._page_markers, key=lambda m: m.y)
+
+    def _renumber_markers(self) -> None:
+        for i, m in enumerate(self.page_markers()):
+            m.number = i + 2
+            m.update()
+
+    def _add_marker(self, y: float) -> PageBreakItem:
+        marker = PageBreakItem(y)
+        self.addItem(marker)
+        self._page_markers.append(marker)
+        self._renumber_markers()
+        return marker
+
+    def _clear_markers(self) -> None:
+        for m in self._page_markers:
+            if m.scene() is self:
+                self.removeItem(m)
+        self._page_markers = []
+
+    def remove_page_breaks(self, markers: list[PageBreakItem]) -> None:
+        """Delete markers only; regions do not move back (spec 021)."""
+        removed = False
+        for m in markers:
+            if m in self._page_markers:
+                self._page_markers.remove(m)
+                removed = True
+            if m.scene() is self:
+                self.removeItem(m)
+        if removed:
+            self._renumber_markers()
+            self.set_modified()
+            self.recalculate()
+
+    def insert_page_break(self, y: float | None = None) -> bool:
+        """Insert a page break at ``y`` (default: the crosshair) with word-processor reflow
+        (spec 021): content at or below ``y`` moves down so it starts at the top of the next A4
+        page. One method so a future undo can wrap it as a single step. Returns False if refused."""
+        current = self.editing_region()
+        if current is not None:
+            current.finish_editing()
+        if y is None:
+            y = self.crosshair.pos().y()
+        y = float(snap(y))
+        breaks = self.page_break_ys()
+        top = max((b for b in breaks if b <= y), default=0.0)
+        if y == top:
+            self.statusMessage.emit("This position is already the top of a page.")
+            return False
+        bottom_edge = top + PAGE_HEIGHT * math.ceil((y - top) / PAGE_HEIGHT)
+        delta = bottom_edge - y
+        moved = 0
+        if delta:
+            for r in self.regions():
+                if r.pos().y() >= y:
+                    r.setPos(r.pos().x(), r.pos().y() + delta)
+                    moved += 1
+            for m in self._page_markers:
+                if m.y >= y:
+                    m.setPos(0.0, m.y + delta)
+        self._add_marker(bottom_edge)
+        self.crosshair.setPos(self.crosshair.pos().x(), bottom_edge)
+        self.set_modified()
+        self._update_rect()
+        self.recalculate()
+        self.statusMessage.emit(
+            f"Page break inserted; moved {moved} regions down by {int(delta)} units.")
+        return True
+
+    def fold_guide_ys(self, limit: float) -> list[float]:
+        """Y of the dashed fold guides (every PAGE_HEIGHT from each page top, strictly inside its
+        page) up to ``limit``."""
+        tops = [0.0] + self.page_break_ys()
+        out: list[float] = []
+        for i, t in enumerate(tops):
+            end = tops[i + 1] if i + 1 < len(tops) else limit
+            y = t + PAGE_HEIGHT
+            while y < end and y <= limit:
+                out.append(y)
+                y += PAGE_HEIGHT
+        return out
+
+    def _assign_seq(self, region: Region) -> None:
+        self._seq_counter += 1
+        region._seq = self._seq_counter
 
     def editing_region(self) -> Region | None:
         for r in self.regions():
@@ -167,6 +302,7 @@ class Worksheet(QGraphicsScene):
         else:
             region = TextRegion(text)
         self.addItem(region)
+        self._assign_seq(region)
         region.setPos(QPointF(snap(pos.x()), snap(pos.y())))
         region.contentChanged.connect(self._on_content_changed)
         region.editingFinished.connect(self._on_editing_finished)
@@ -265,6 +401,7 @@ class Worksheet(QGraphicsScene):
                               pos: QPointF) -> ComponentRegion:
         region = ComponentRegion(self._unique_component_name(name or "Comp"), kind, config)
         self.addItem(region)
+        self._assign_seq(region)
         region.setPos(QPointF(snap(pos.x()), snap(pos.y())))
         region.moved.connect(self._on_moved)
         self.set_modified()
@@ -446,6 +583,7 @@ class Worksheet(QGraphicsScene):
             if w.scene() is self:
                 self.removeItem(w)
         self._wires = []
+        self._clear_markers()
         for r in self.regions():
             self._discard(r)
         self.crosshair.setPos(GRID * 4, GRID * 4)
@@ -469,10 +607,13 @@ class Worksheet(QGraphicsScene):
                                     *((r.size_w, r.size_h) if isinstance(r, PlotRegion) else (None, None))))
         wires = [WireData(w.source.component_name, w.source_port, w.dest.component_name, w.dest_port)
                  for w in self._wires]
-        return SheetDocument(regions=regs, significant=self.engine.significant, wires=wires)
+        return SheetDocument(regions=regs, significant=self.engine.significant, wires=wires,
+                             page_breaks=self.page_break_ys())
 
     def load_document(self, doc: SheetDocument) -> None:
         self.clear_sheet()
+        for b in sorted(doc.page_breaks):
+            self._add_marker(b)
         self.engine.significant = doc.significant
         by_name: dict[str, ComponentRegion] = {}
         for rd in doc.regions:
@@ -528,7 +669,7 @@ class Worksheet(QGraphicsScene):
                                        c.pos().x(), c.pos().y()) for c in components]
         wire_specs = [wiring.WireSpec(w.source.component_name, w.source_port,
                                        w.dest.component_name, w.dest_port) for w in self._wires]
-        comp_results = wiring.evaluate(specs, wire_specs, self.engine)
+        comp_results = wiring.evaluate(specs, wire_specs, self.engine, page_breaks=self.page_break_ys())
         for c in components:
             res = comp_results.get(c.component_name)
             c.set_result(res)
@@ -628,6 +769,14 @@ class Worksheet(QGraphicsScene):
                 self._begin_wire_drag(region, hit[1], event.scenePos())
                 event.accept()
                 return
+        if isinstance(item, PageBreakItem) and event.button() == Qt.MouseButton.LeftButton:
+            editing = self.editing_region()
+            if editing is not None:
+                editing.finish_editing()
+            self.clearSelection()
+            item.setSelected(True)
+            event.accept()
+            return
         if region is None and event.button() == Qt.MouseButton.LeftButton:
             editing = self.editing_region()
             if editing is not None:
@@ -665,7 +814,11 @@ class Worksheet(QGraphicsScene):
         key, text = event.key(), event.text()
         selected = [it for it in self.selectedItems() if isinstance(it, Region)]
         selected_wires = [it for it in self.selectedItems() if isinstance(it, WireItem)]
-        if key in (Qt.Key.Key_Delete, Qt.Key.Key_Backspace) and (selected or selected_wires):
+        selected_breaks = [it for it in self.selectedItems() if isinstance(it, PageBreakItem)]
+        if key in (Qt.Key.Key_Delete, Qt.Key.Key_Backspace) and (
+                selected or selected_wires or selected_breaks):
+            if selected_breaks:
+                self.remove_page_breaks(selected_breaks)
             if selected:
                 self.remove_regions(selected)
             if selected_wires:
@@ -720,6 +873,11 @@ class Worksheet(QGraphicsScene):
         # page edge
         painter.setPen(QPen(QColor("#c9d3e0"), 1, Qt.PenStyle.DashLine))
         painter.drawLine(QPointF(PAGE_WIDTH, rect.top()), QPointF(PAGE_WIDTH, rect.bottom()))
+        # fold guides: where export cuts an overflowing page onto extra sheets
+        painter.setPen(QPen(QColor("#c9d3e0"), 1, Qt.PenStyle.DashLine))
+        for gy in self.fold_guide_ys(max(self.sceneRect().bottom(), rect.bottom())):
+            if rect.top() - 1 <= gy <= rect.bottom() + 1:
+                painter.drawLine(QPointF(rect.left(), gy), QPointF(PAGE_WIDTH, gy))
         # faint grid dots
         painter.setPen(QPen(QColor("#e3e8ef"), 1))
         step = GRID * 2

@@ -38,8 +38,9 @@ from PySide6.QtCore import QPoint, QPointF, QSettings, Qt  # noqa: E402
 from PySide6.QtGui import QImage, QPainter  # noqa: E402
 from PySide6.QtWidgets import QApplication, QDialog, QStyleOptionGraphicsItem  # noqa: E402
 
+from livesheet.gui import componentdialog  # noqa: E402
 from livesheet.gui import main_window as mw_module  # noqa: E402
-from livesheet.gui.componentdialog import ComponentFields  # noqa: E402
+from livesheet.gui.componentdialog import AddComponentDialog, ComponentFields  # noqa: E402
 from livesheet.gui.main_window import MainWindow  # noqa: E402
 from livesheet.gui.worksheet import WireItem, Worksheet  # noqa: E402
 
@@ -340,4 +341,106 @@ def test_insert_component_menu_entry_opens_dialog_and_places_formula_component()
     assert placed.component_kind == "formula"
     assert placed._inputs == ["a", "b"]
     assert placed._outputs == ["result"]
+    win.sheet.set_modified(False)
+
+
+# ===========================================================================
+# Spec 013: "CAD profile (DXF)" dialog page field round-trip
+# ===========================================================================
+
+def test_add_component_dialog_offers_cad_profile_kind():
+    _ensure_app()
+    dialog = AddComponentDialog()
+    labels = [dialog.kind_combo.itemText(i) for i in range(dialog.kind_combo.count())]
+    assert "CAD profile (DXF)" in labels
+
+
+def test_cad_profile_page_fields_round_trip_into_config():
+    _ensure_app()
+    dialog = AddComponentDialog()
+    index = dialog.kind_combo.findText("CAD profile (DXF)")
+    assert index >= 0
+    dialog.kind_combo.setCurrentIndex(index)
+    dialog.name_edit.setText("P1")
+    dialog.cad_path_edit.setText("/tmp/profile.dxf")
+    dialog.cad_layer_edit.setText("profile")
+    dialog.cad_unit_edit.setText("mm")
+
+    dialog.accept()
+
+    name, kind, config = dialog.result_fields()
+    assert name == "P1"
+    assert kind == "cad-profile"
+    assert config == {"path": "/tmp/profile.dxf", "layer": "profile", "unit": "mm"}
+
+
+def test_cad_profile_page_browse_button_fills_path_from_file_dialog():
+    """Browse… opens the same generic ``QFileDialog.getOpenFileName`` chrome the app's own
+    Open/Save-As actions already use, mocked the same way (patch the static method, like the
+    existing ``QInputDialog.getInt`` mocks in ``test_main_window_*.py``)."""
+    _ensure_app()
+    dialog = AddComponentDialog()
+    index = dialog.kind_combo.findText("CAD profile (DXF)")
+    dialog.kind_combo.setCurrentIndex(index)
+
+    def fake_get_open_file_name(*_args, **_kwargs):
+        return "/tmp/picked.dxf", "DXF files (*.dxf)"
+
+    orig = componentdialog.QFileDialog.getOpenFileName
+    componentdialog.QFileDialog.getOpenFileName = staticmethod(fake_get_open_file_name)
+    try:
+        dialog._browse_cad_path()
+    finally:
+        componentdialog.QFileDialog.getOpenFileName = orig
+
+    assert dialog.cad_path_edit.text() == "/tmp/picked.dxf"
+
+
+def test_cad_profile_page_requires_nonblank_path():
+    app = _ensure_app()
+    dialog = AddComponentDialog()
+    index = dialog.kind_combo.findText("CAD profile (DXF)")
+    dialog.kind_combo.setCurrentIndex(index)
+    dialog.name_edit.setText("P1")
+    dialog.cad_path_edit.setText("")
+
+    dialog.accept()
+
+    assert dialog.banner_label.text() == "File path is required"
+    # isVisible() needs the top-level dialog to actually have been shown first (a QWidget's
+    # isVisible() is False until its top-level window is shown).
+    dialog.show()
+    app.processEvents()
+    assert dialog.banner_label.isVisible()
+
+
+def test_add_component_dialog_places_cad_profile_component():
+    _ensure_app()
+    win = MainWindow()
+    insert_menu = next(a.menu() for a in win.menuBar().actions()
+                        if a.menu() and a.menu().title() == "&Insert")
+    action = next((a for a in insert_menu.actions() if "Component" in a.text()), None)
+    assert action is not None
+
+    def fake_exec(self):
+        self._fields = ComponentFields(
+            name="P1", kind="cad-profile",
+            cad_path="/tmp/profile.dxf", cad_layer="", cad_unit="mm")
+        return QDialog.DialogCode.Accepted
+
+    orig = componentdialog.AddComponentDialog.exec
+    componentdialog.AddComponentDialog.exec = fake_exec
+    try:
+        action.trigger()
+    finally:
+        componentdialog.AddComponentDialog.exec = orig
+
+    placed = win.sheet.component_regions()[0]
+    assert placed.component_kind == "cad-profile"
+    assert placed.config == {"path": "/tmp/profile.dxf", "layer": "", "unit": "mm"}
+    assert placed._inputs == []
+    assert placed._outputs == [
+        "area", "centroid_x", "centroid_y", "Ixx", "Iyy", "Ixy", "J", "rx", "ry",
+        "Sx_top", "Sx_bottom", "Sy_left", "Sy_right", "outline",
+    ]
     win.sheet.set_modified(False)

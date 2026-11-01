@@ -16,6 +16,7 @@ from dataclasses import dataclass
 from PySide6.QtWidgets import (
     QComboBox,
     QDialog,
+    QFileDialog,
     QFormLayout,
     QHBoxLayout,
     QLabel,
@@ -27,8 +28,8 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
-_KIND_LABELS = ("Value", "Formula")
-_KIND_BY_LABEL = {"Value": "value", "Formula": "formula"}
+_KIND_LABELS = ("Value", "Formula", "CAD profile (DXF)")
+_KIND_BY_LABEL = {"Value": "value", "Formula": "formula", "CAD profile (DXF)": "cad-profile"}
 _LABEL_BY_KIND = {v: k for k, v in _KIND_BY_LABEL.items()}
 
 _NAME_RE = re.compile(r"^[^\W\d]\w*$")
@@ -43,15 +44,24 @@ class ComponentFields:
     """One in-memory snapshot of every field the "Add Component" dialog shows."""
 
     name: str = ""
-    kind: str = "value"             # "value" | "formula"
+    kind: str = "value"             # "value" | "formula" | "cad-profile"
     value_expr: str = ""
     formula_inputs: str = ""
     formula_expr: str = ""
+    cad_path: str = ""
+    cad_layer: str = ""
+    cad_unit: str = ""
 
 
 def fields_to_config(fields: ComponentFields) -> dict[str, str]:
     if fields.kind == "formula":
         return {"inputs": fields.formula_inputs.strip(), "expr": fields.formula_expr.strip()}
+    if fields.kind == "cad-profile":
+        return {
+            "path": fields.cad_path.strip(),
+            "layer": fields.cad_layer.strip(),
+            "unit": fields.cad_unit.strip(),
+        }
     return {"expr": fields.value_expr.strip()}
 
 
@@ -85,6 +95,9 @@ def validate_component_fields(fields: ComponentFields) -> ComponentFieldError | 
             return ComponentFieldError("formula_inputs", "Input names must be unique")
         if not fields.formula_expr.strip():
             return ComponentFieldError("formula_expr", "Expression is required")
+    elif fields.kind == "cad-profile":
+        if not fields.cad_path.strip():
+            return ComponentFieldError("cad_path", "File path is required")
     else:
         return ComponentFieldError("kind", f"Unknown kind '{fields.kind}'")
     return None
@@ -117,6 +130,7 @@ class AddComponentDialog(QDialog):
         layout.addWidget(self._stack)
         self._stack.addWidget(self._build_value_page())
         self._stack.addWidget(self._build_formula_page())
+        self._stack.addWidget(self._build_cad_profile_page())
 
         self.banner_label = QLabel("")
         self.banner_label.setStyleSheet(_ERROR_TEXT)
@@ -153,6 +167,28 @@ class AddComponentDialog(QDialog):
         form.addRow("Expression:", self.formula_expr_edit)
         return page
 
+    def _build_cad_profile_page(self) -> QWidget:
+        page = QWidget()
+        form = QFormLayout(page)
+        path_row = QHBoxLayout()
+        self.cad_path_edit = QLineEdit()
+        path_row.addWidget(self.cad_path_edit)
+        browse_btn = QPushButton("Browse…")
+        browse_btn.clicked.connect(self._browse_cad_path)
+        path_row.addWidget(browse_btn)
+        form.addRow("Path:", path_row)
+        self.cad_layer_edit = QLineEdit()
+        form.addRow("Layer (optional):", self.cad_layer_edit)
+        self.cad_unit_edit = QLineEdit()
+        self.cad_unit_edit.setPlaceholderText("auto from file")
+        form.addRow("Unit (optional):", self.cad_unit_edit)
+        return page
+
+    def _browse_cad_path(self) -> None:
+        name, _ = QFileDialog.getOpenFileName(self, "Open DXF file", "", "DXF files (*.dxf)")
+        if name:
+            self.cad_path_edit.setText(name)
+
     def _on_kind_changed(self, index: int) -> None:
         self._stack.setCurrentIndex(index)
 
@@ -164,6 +200,9 @@ class AddComponentDialog(QDialog):
             value_expr=self.value_expr_edit.text(),
             formula_inputs=self.formula_inputs_edit.text(),
             formula_expr=self.formula_expr_edit.text(),
+            cad_path=self.cad_path_edit.text(),
+            cad_layer=self.cad_layer_edit.text(),
+            cad_unit=self.cad_unit_edit.text(),
         )
 
     def accept(self) -> None:

@@ -85,20 +85,19 @@ def _close(win: MainWindow) -> None:
 # Toolbars & menu (criteria 1-4)
 # ---------------------------------------------------------------------------
 
-def test_criterion1_fresh_settings_have_no_window_state_key_yet_both_toolbars_show():
+def test_criterion1_fresh_settings_have_no_window_state_key_yet_standard_toolbar_shows():
+    """Updated for spec 011 (developer, flagged in docs/board/log.md): the Math toolbar this
+    criterion originally also checked for is removed by spec 011; the bar's own objectName/
+    movability/placement assertions are unaffected and kept."""
     win = _win()
     assert win.settings.value("window_state") is None   # genuinely first launch
     win.show()
     QApplication.processEvents()
     standard = win.findChild(QToolBar, "standard-toolbar")
-    math_tb = win.findChild(QToolBar, "math-toolbar")
-    assert standard.isVisible() and math_tb.isVisible()
-    assert standard.isMovable() and math_tb.isMovable()
-    # "stacked... standard-toolbar above math-toolbar": on a fresh window, Standard's row is
-    # above Math's row in the top toolbar area.
-    assert standard.y() < math_tb.y()
+    assert standard.isVisible()
+    assert standard.isMovable()
     assert win.toolBarArea(standard) == Qt.ToolBarArea.TopToolBarArea
-    assert win.toolBarArea(math_tb) == Qt.ToolBarArea.TopToolBarArea
+    assert win.findChild(QToolBar, "math-toolbar") is None
     _close(win)
 
 
@@ -119,15 +118,18 @@ def test_criterion2_standard_toolbar_order_labels_and_identity_with_menu_actions
     _close(win)
 
 
-def test_criterion3_toggling_math_toolbar_leaves_standard_toolbar_untouched():
+def test_criterion3_standard_toolbar_toggle_works_math_toolbar_entry_gone_spec011():
+    """Updated for spec 011: there is no Math toolbar to toggle any more (no "Math Toolbar"
+    View entry); Standard's own toggle still works exactly as before."""
     win = _win()
     win.show()
     QApplication.processEvents()
     standard = win.findChild(QToolBar, "standard-toolbar")
-    math_tb = win.findChild(QToolBar, "math-toolbar")
-    math_tb.toggleViewAction().trigger()
-    assert not math_tb.isVisible()
-    assert standard.isVisible()   # opposite direction from the toggle tested elsewhere
+    view_menu = next(m for m in win.menuBar().findChildren(type(win.menuBar().addMenu("x")))
+                      if m.title() == "&View")
+    assert not any(a.text() == "Math Toolbar" for a in view_menu.actions())
+    standard.toggleViewAction().trigger()
+    assert not standard.isVisible()
     _close(win)
 
 
@@ -147,7 +149,10 @@ def test_criterion4_dragged_toolbar_to_left_edge_persists_across_restart():
 # Side panel (criteria 5-9)
 # ---------------------------------------------------------------------------
 
-def test_criterion5_side_panel_visible_by_default_docked_left_three_tabs_in_order():
+def test_criterion5_side_panel_visible_by_default_docked_left_seven_tabs_in_order_spec011():
+    """Updated for spec 011: the side panel now has 7 tabs (Elements/Algebra/Calculus/
+    Statistics/Optimization/Outline/Data) instead of spec 007's original 3 (Symbols/Outline/
+    Data)."""
     win = _win()
     win.show()
     QApplication.processEvents()
@@ -155,42 +160,31 @@ def test_criterion5_side_panel_visible_by_default_docked_left_three_tabs_in_orde
     assert dock.isVisible()
     assert win.dockWidgetArea(dock) == Qt.DockWidgetArea.LeftDockWidgetArea
     tabs = win.findChild(type(win.side_panel.tabs), "side-panel-tabs")
-    assert [tabs.tabText(i) for i in range(tabs.count())] == ["Symbols", "Outline", "Data"]
+    assert [tabs.tabText(i) for i in range(tabs.count())] == \
+        ["Elements", "Algebra", "Calculus", "Statistics", "Optimization", "Outline", "Data"]
     _close(win)
 
 
-def test_criterion6_symbols_tab_tooltips_match_math_toolbar_tooltips():
-    win = _win()
-    math_tb = win.findChild(QToolBar, "math-toolbar")
-    toolbar_tooltips = {a.text(): a.toolTip() for a in math_tb.actions() if not a.isSeparator()}
-    for label in ("π", "√", "d/dx", ":="):
-        panel_btn = win.side_panel.symbol_buttons[label]
-        assert panel_btn.toolTip() == toolbar_tooltips[label]
-    _close(win)
-
-
-def test_criterion6_clicking_each_required_symbol_matches_the_toolbar_token():
+def test_criterion6_functional_tab_buttons_insert_the_expected_token_spec011():
+    """Updated for spec 011: the Math toolbar this criterion originally compared against is
+    gone; tokens are now checked directly against the single source of truth, MATH_TOKENS
+    (unchanged shape/values for the carried-over entries, per spec 011's own requirement)."""
     win = _win()
     sheet = win.sheet
-    math_tb = win.findChild(QToolBar, "math-toolbar")
-    tb_actions = {a.text(): a for a in math_tb.actions() if not a.isSeparator()}
-    for label in ("π", "√", "d/dx", ":="):
+    for label in ("π", "√", "d/dx", ":=", "α", "xₙ"):
         sheet.clear_sheet()
-        tb_actions[label].trigger()
-        tb_region = sheet.editing_region()
-        toolbar_result = tb_region.source
-        sheet.clear_sheet()
+        expected = next(tok for _cat, lab, tok, _tip in MATH_TOKENS if lab == label)
         win.side_panel.symbol_buttons[label].click()
-        panel_region = sheet.editing_region()
-        assert panel_region.source == toolbar_result
+        region = sheet.editing_region()
+        assert region is not None and region.source == expected
     _close(win)
 
 
 def test_criterion7_outline_and_data_tabs_hold_exactly_one_distinct_label_each():
     win = _win()
     tabs = win.side_panel.tabs
-    outline_widget = tabs.widget(1)
-    data_widget = tabs.widget(2)
+    outline_widget = tabs.widget(5)
+    data_widget = tabs.widget(6)
     assert [type(w) for w in outline_widget.findChildren(QPushButton)] == []
     assert [type(w) for w in data_widget.findChildren(QPushButton)] == []
     outline_labels = outline_widget.findChildren(QLabel)
@@ -211,7 +205,7 @@ def test_criterion8_reopening_after_a_closed_restart_restores_prior_tab_and_widt
     win.resize(1000, 700)
     win.show()
     QApplication.processEvents()
-    win.side_panel.tabs.setCurrentIndex(1)   # Outline, a non-default tab
+    win.side_panel.tabs.setCurrentIndex(1)   # Algebra (post spec 011), a non-default tab
     win.resizeDocks([win.side_panel], [250], Qt.Orientation.Horizontal)
     QApplication.processEvents()
     width_before = win.side_panel.width()

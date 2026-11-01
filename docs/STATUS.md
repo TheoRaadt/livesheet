@@ -1,62 +1,109 @@
-# LiveSheet status (2026-10-29, end of session)
+# LiveSheet status (2026-11-01, session stopped — Theo reaching usage limits, asked to stop all agents)
 
-Commits: aca0667 team+policy+licence · f2b6e66 specs · 3d74db5 spec 001 · 364f057 001 fixes · bbcad16 spec 002a ·
-5a3f973 002a fixes · c0b25a2 GUI fixes · 280f2c3 003A · b7beb0f 003A fixes · 39f1c5b 003B + G4 fix · 2982a43 spec
-002b · ef12bec spec 004 A1 · b862444 spec 004 A2 · **288c307 specs 006-009 + calculus C1-C4 + GUI polish** ·
-**cea2cc6 spec 009 D1 fix + GUI tests**. Not pushed to GitHub (17 commits ahead of origin/main).
+Commits: unchanged since last session (`911addf` is still HEAD; see git log). **Nothing from this
+session is committed.** All 4 agents running at the end of this session were stopped via TaskStop
+at Theo's request; none got to send their own final handoff report, so everything below about their
+state was reconstructed by the manager directly from what they actually left on disk, not assumed
+from their last tool call.
 
-**This session:** picked up substantial spec 009 (component-wiring core) work left uncommitted/unlogged by an
-interrupted prior session, found and fixed two real regressions before committing (document.py writing `wires`/
-component fields unconditionally, breaking backward compatibility; spec 007's D1 toolbar-squash defect, root
-cause: a toolbar stuck `isFloating()` surviving both headless restore and Theo's real on-disk preferences).
-Completed the spec 008 (matrix dialog) review, which had been blocked by a hanging test (`mock.patch.object
-(QMenu, "exec", ...)` doesn't intercept a live Qt instance's call — fixed with `QTimer.singleShot` + real
-`QTest` key events). Completed the spec 009 independent review (tester), found and fixed D1 (no menu fallback
-to the pixel-exact port right-click for "Connect...") plus added the missing `tests/test_wiring_gui.py` the
-spec's own architecture section called for. Full suite: **1129 passed, 2 xfailed** (both pre-existing/unrelated:
-E1 002b eigenvalues-as-numeric, M3 `f(M):=det(M)`). Two PDFs Theo placed in docs/ (`Engineering With Mathcad.pdf`,
-`calculus-10th-edition-anton.pdf`) remain deliberately untracked — never used, never committed, see
-ip-cleanroom skill rule 7.
+## Done and accepted this session (solid, verified, just not committed)
+- **Specs 013+014 (DXF profile import, both phases) are now fully done end-to-end**: spec 014's
+  independent review was finished (picking up an earlier interrupted session), independently
+  spot-checked by the manager (re-derived the bulge-direction fix's key numeric claim directly
+  against the code: 676.8176834728116 mm², matches exactly), accepted. Combined manual page
+  (docs/manual/cad-profiles.md) written and accepted, including two findings the documenter caught
+  by reading the shipped code against the spec text (one dead error message no longer reachable,
+  one message whose trigger condition had narrowed) — both independently verified by the manager.
+- **Known issue 38 is fixed and closed**: `wiring.py`'s `format_output()` no longer crashes on a
+  Matrix-valued component output (it now mirrors `evaluator.py`'s own per-cell matrix-display
+  convention). Independently verified by the manager (suite count + direct repro calls). No spec
+  was needed, pure bug fix.
+- Fixed two stale labels in backlog.md (002b and the 2D-plots item were already done but still
+  marked otherwise) found while cross-checking against decisions.md/log.md.
+- New M8 milestone added to backlog.md (Theo's request): three new SI-only, categorized side-panel
+  formula tabs (Mechanical/Electrical/Chemical), same quick-insert mechanism as spec 011.
+- **Spec 018 (Mechanical formula tab) is fully IP-reviewed and approved**, with the manager finding
+  and fixing 4 real numeric-example errors in its own acceptance criteria before accepting (see
+  below) — the same category of pre-implementation flaw past specs have had (010's criteria 7/18,
+  014's semicircle-prose note).
 
-## Done
-- Licence: MIT OR Apache-2.0. Clean-room IP policy (docs/IP-POLICY.md). Team: mathcad-specialist,
-  gui-specialist, modeling-specialist, developer, tester, manager (CLAUDE.md, docs/PLAN.md).
-- 001 ranges and tables, 002a vectors/matrices core, 002b eigen/rank/norm/least squares, 003 solve models
-  phase A+B, 004 plots phase A (A1 engine + A2 document/GUI/PDF), 006 dialog-based plot configuration (D1
-  fixed), 007 main window chrome (toolbars/side panel/theming; D1 toolbar-squash fixed), 008 dialog-based
-  matrix/vector insertion, 009 component-wiring canvas core (D1 Connect-menu fallback fixed). All implemented,
-  independently reviewed, and committed.
-- Calculus defects C1-C4 fixed (`limit` keyword form, `ln` vs `log` display, friendly ambiguous-variable
-  errors, non-integer series-order error); ∫ and d/dx real notation on the sheet; Math toolbar `e`, `i`, ⁿ√.
-- Real-app tests on the Mac: 001, 002a, 003A passed after fixes (colon handling, matrix grid, safe Save As
-  defaults).
+## In flight / left incomplete — next session should pick these up, in this order
 
-## Open / unverified
-- **Standing gap across specs 006/007/008/009: no computer_* tool was available this session for any review,
-  so none of their real-window manual passes are done.** Checklist: Insert menus/"here" context-menu entries,
-  dialog fill/Apply/OK/Cancel round trips, drag gestures (toolbar reorder, component wiring, plot resize),
-  Appearance visual restyle, canvas-colour stability, slow-recalc status label, first-run hint, PDF export +
-  vector sharpness, save/reopen. Needs Theo directly or a session with screen/input permissions granted.
-- Layout: tall tables/grids can overlap regions below; wide results run off-window (backlog 20, 24); plots may
-  overlap regions below until backlog 20 (accepted for phase A); reading order is unstable when two regions
-  share the exact same position (backlog 28).
-- Known limits: zero from SymPy loses its unit; `f(M) := det(M)` unsupported; local optima only; solves run on
-  the GUI thread; `diff(EXPR)` 1-arg auto-detect form isn't given the ∫/d-dx display notation (only the 2-/3-arg
-  explicit-variable forms are); components don't read/write ordinary sheet variables yet (spec 009, by design).
-- Decisions pending: product name trademark check; notation review before 1.0; a short human/legal sanity
-  check on specs 006/009's interaction techniques (lower risk than rejected designs, still flagged, see
-  decisions.md); lawyer review before public 1.0; whether to push to GitHub.
-- Multiple sessions this run hit a recurring "Qt platform plugin offscreen" hard-abort in the shared `.venv`;
-  recreating `.venv` fixes it every time (a targeted reinstall doesn't) — likely multiple agents/sessions
-  sharing one `.venv` concurrently, not corruption per se. No permanent fix yet, just a known recovery step.
+### 1. IP-review specs 017 (statistics), 019 (chemical), 020 (electrical) — not yet done
+All three are **complete, well-formed specs already on disk**, written by specialist sessions that
+were stopped before they could send their own report (confirmed by reading each file directly — all
+end cleanly with a full "Open questions" section, none cut off mid-sentence):
+- `docs/board/specs/017-statistics-core.md` (732 lines, backlog item 29) — phased S1 (descriptive
+  stats + 4 distributions)/S2 (hypothesis tests, new tagged-region construct)/S3 (regression,
+  extends 002b's least-squares). 8 open questions recorded in the file, including whether
+  `scipy.stats`/`numpy.random` should be the implementation backend.
+- `docs/board/specs/019-chemical-formula-tab.md` (350 lines, backlog item 41) — self-resolved a
+  numbering collision correctly (found 018 taken by Mechanical, renumbered to 019, left a stale
+  stub). 5 open questions recorded.
+- `docs/board/specs/020-electrical-formula-tab.md` (457 lines, backlog item 40, phase E1 = DC
+  Circuits + Power) — self-resolved the same collision (found both 018 and 019 taken, renumbered to
+  020, left its own stale stub). Did receive the manager's relayed naming-collision warning (see
+  below) and independently re-confirmed the `_check_defined()` landmine itself.
 
-## Next steps
-1. Theo's real-window pass on specs 006/007/008/009 (see checklist above).
-2. Spec 010 (ODE solving) — approved, queued, not started.
-3. Specs from mathcad-specialist (assumptions, rewrite rules, context menu) for M3/M4; backlog 7a (document
-   structure/ToC/index) and 8a (dataset import + reference data); M5 (statistics/optimization, items 29-30);
-   M6 (data-source/nested-sheet/script components, items 32-34) once 009's core is verified real-window.
+**Before accepting 019/020, re-run the same numeric-verification pass the manager did on spec 018**:
+every one of spec 018's acceptance criteria that claimed a bare `<name> =` would print a
+prefixed-unit result (`MPa`, `mm`) turned out to be wrong — the engine only prints a non-base-SI
+unit when it's explicitly requested (`sigma = MPa`, not `sigma =`), and one criterion (moment of
+force) printed `J` instead of the claimed `N·m` because they share a base-SI dimension. This was
+caught by running `Engine().evaluate(enumerate([...]))` directly against each criterion before
+accepting, not by reading the spec text and trusting it. **Spec 019/020 almost certainly have the
+same class of flaw in any criterion involving a non-base-SI unit** (electrical especially — `kΩ`,
+`mA`, `kW`, etc. are exactly the kind of prefixed unit this bug class affects) and have not been
+checked yet.
 
-## Tester practicalities (Mac)
-LiveSheet runs from ~/livesheet-venv (pip install -e). Terminal is click-only for agents; Theo starts the app. Window must not be in a
-full-screen Space unless system key combos are granted. Dialog tests: Cancel only, never save over examples/.
+### 2. Engine hardening of `_check_defined()` — barely started, needs a fresh dispatch
+Theo decided (asked directly, 2026-11-01): a bare variable name that resolves only because it
+matches a `UNITS`/`BUILTINS` key (e.g. typing `F` or `A` with nothing defined) should be reported as
+`"not defined"` instead of silently evaluating as that unit. A developer was dispatched with an
+explicit, detailed warning that the naive fix (flag any bare UNITS-colliding name) would break
+nearly every existing `<number> <unit>` statement in the whole suite (`5 N`, `10 m`, etc. all rely
+on exactly this mechanism), and was asked to investigate the real parsing/substitution pipeline for
+a safe distinguishing rule, or report back if none exists rather than ship something risky.
+
+**This got only ~2 minutes of work before being stopped** — it reproduced the landmine
+(`Engine().evaluate(enumerate(['sigma := F/A', 'sigma =']))` gives `status='ok'`, not an error) and
+was about to start investigating `free_symbols` behavior when stopped. **No actual investigation of
+the fix happened, no code was touched.** Re-dispatch fresh next session using the same detailed
+warning (see docs/board/decisions.md's 2026-11-01 "spec 018" entry for the full writeup of why this
+is genuinely tricky, not a one-line fix) — don't try to resume the stopped agent from where it left
+off, there's nothing of substance to resume from.
+
+### 3. Spec 018 (Mechanical) itself: fully approved, intentionally held back
+Not a problem, just sequencing: spec 018 is fully IP-reviewed and its numeric examples corrected and
+verified, but deliberately **not yet dispatched to a developer**, because specs 018/019/020 all
+independently want to edit the same `TAB_ORDER` list in `livesheet/gui/sidepanel.py` — once 019/020
+are also IP-reviewed, give one developer task all three tab additions together (recommended merged
+order: `Elements, Algebra, Calculus, Statistics, Optimization, Mechanical, Electrical, Chemical,
+Outline, Data`) rather than three separate merge collisions.
+
+## Standing items (carried forward, unchanged)
+- **The real-window manual pass on Theo's Mac** is still outstanding for specs 010, 011, 013, 014,
+  and 015 — no session so far has had computer-use tooling available.
+- Two untracked vendor PDFs in `docs/` remain deliberately untracked/unused (ip-cleanroom rule 7).
+- Backlog beyond M8: item 30 (optimization) still needs a spec; spec 016 (3D plots/animation) is
+  still only a research note, renderer choice undecided; Phase F2 (beam elements, FEM) is a forward
+  note in spec 015 only, not yet specced; backlog items 7/7a/8/8a/9 (document quality), 10-13/19
+  (CAS depth/usability beyond ODEs), 32/33/34/37 (data-source components, nested sub-sheets,
+  user-script components, 3D plots — all of M6 except the core wiring mechanism and DXF import) are
+  all still unstarted.
+
+## Tester/dev practicalities (Mac)
+LiveSheet runs from `~/livesheet-venv` (pip install -e). Concurrent agent sessions sometimes end up
+with separate venv instances — if a session hits `ModuleNotFoundError` for a dependency another
+agent just added, just `source ~/livesheet-venv/bin/activate && pip install -e ".[dev]"` again in
+that session's own shell rather than assuming something is broken (this bit the manager directly
+this session — the main session's own shell was NOT using the project venv by default, needed
+`source ~/livesheet-venv/bin/activate` before every `pytest`/`python3` call). Terminal is click-only
+for agents; Theo starts the app. Window must not be in a full-screen Space unless system key combos
+are granted. Dialog tests: Cancel only, never save over examples/.
+
+## Full suite state, last independently confirmed
+`QT_QPA_PLATFORM=offscreen pytest -q` (from `~/livesheet-venv`): **1647 passed, 2 xfailed, 0
+failed** — confirmed right after the known-issue-38 fix, before any of the stopped work above
+(which added no code, only spec/doc files). This is the number to expect at the start of next
+session; if it differs, something changed outside this record.

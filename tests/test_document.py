@@ -19,7 +19,7 @@ def test_roundtrip(tmp_path):
 
 def test_reading_order():
     doc = SheetDocument([RegionData("math", 300, 10, "b"), RegionData("math", 10, 10, "a"),
-                         RegionData("math", 10, 50, "c")])
+                         RegionData("math", 310, 50, "c")])
     assert [r.text for r in doc.ordered()] == ["a", "b", "c"]
 
 

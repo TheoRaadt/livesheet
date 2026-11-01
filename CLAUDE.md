@@ -12,14 +12,17 @@ Vision: combine the engineering-calculation workflow of Mathcad-style tools, the
 ## Architecture
 - livesheet/engine/: GUI-independent (syntax, evaluator, units, formatting). Never import PySide6 here.
 - livesheet/gui/: PySide6 front end. livesheet/document.py: .lsheet format (keep backward compatible).
-- Evaluation order: top to bottom, then left to right.
+- Evaluation order: left to right, then top to bottom, per page.
 
 ## Manager role (main session)
-The main session is the manager and does not write feature code itself. Workflow per feature:
+The main session is the manager and does not write feature code itself. Invoke the
+`manager-delegation` skill at the start of a session and before any Edit/Write/Bash touching
+livesheet/, tests/, or spec content — it has been repeatedly forgotten. Workflow per feature:
 1. mathcad-specialist / gui-specialist / modeling-specialist write a spec in docs/board/specs/.
 2. Manager IP-reviews the spec against docs/IP-POLICY.md.
 3. developer implements one approved spec; tester writes independent tests from the spec and reports in docs/board/reviews/.
 4. Developer fixes, manager merges and commits.
+5. Once the manager has accepted both the implementation and the tester's review (the spec is fully done), documenter updates the end-user manual in docs/manual/ (how-to guide + the error-message reference) from the approved spec and the actual shipped code — never from vendor docs.
 Agents share their durable state via docs/board/ (backlog, specs, reviews, log.md, decisions.md) — this remains the record the manager and future sessions read. Since 2026-10-29, agents may also message each other directly (ListAgents/SendMessage) for quick coordination instead of always routing through the manager. This does not relax the IP gate: the developer only ever implements from a spec that already passed the manager's IP review in docs/board/specs/, never from something said only in chat; any chat clarification that changes a spec or an implementation must be written back into docs/board/ (the spec, or a log.md line) so the trail stays complete. Open questions go to docs/board/decisions.md and are asked to Theo.
 
 ## Hard rules
@@ -29,9 +32,9 @@ Agents share their durable state via docs/board/ (backlog, specs, reviews, log.m
 - Do not commit or push without Theo's approval.
 
 ## Conventions
-- Communicate with Theo in Dutch; code, docs, commits and comments in English.
+- Communicate with Theo in English; code, docs, commits and comments in English.
 - Type hints, small functions, tests for every engine feature.
 - Testing: the tester must also launch the real app and open/close its windows itself (computer use on Theo's Mac), not only run headless tests.
-- Dependencies: sympy, PySide6, scipy (approved 2026-10-27).
+- Dependencies: sympy, PySide6, scipy (approved 2026-10-27), ezdxf (approved 2026-10-30, DXF import, spec 013).
 - Current state and open items: docs/STATUS.md. Agents sometimes run as general-purpose with the role prompt (the repo agents are definitions for Claude Code); handoffs always go through docs/board/.
 - Git in this mounted folder leaves .lock files; move them to .git/stale-* (no delete permission).

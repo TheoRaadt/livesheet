@@ -534,8 +534,8 @@ def test_criterion11_bare_version3_with_no_component_or_wire_content_is_rejected
         SheetDocument.from_json(raw)
 
 
-def test_criterion11_version_above_3_is_always_rejected():
-    raw = json.dumps({"format": "livesheet", "version": 4, "regions": []})
+def test_criterion11_version_above_4_is_always_rejected():
+    raw = json.dumps({"format": "livesheet", "version": 5, "regions": []})
     with pytest.raises(DocumentError, match="newer LiveSheet version"):
         SheetDocument.from_json(raw)
 

@@ -29,18 +29,42 @@ from .. import __version__
 from ..document import FILE_SUFFIX, DocumentError, SheetDocument
 from .paths import default_save_path, remembered_dir
 from .regions import MathRegion
-from .sidepanel import MATH_TOKENS, SidePanel
+from .sidepanel import SidePanel
 from .theme import MODE_DARK, MODE_LIGHT, MODE_SYSTEM, apply_theme
-from .worksheet import PAGE_WIDTH, Worksheet, WorksheetView
+from ..engine.pagination import PAGE_HEIGHT
+from .worksheet import PAGE_WIDTH, PageBreakItem, Worksheet, WorksheetView
 
 APPEARANCE_MODES = ((MODE_SYSTEM, "Follow System"), (MODE_LIGHT, "Light"), (MODE_DARK, "Dark"))
 
 FILE_FILTER = f"LiveSheet worksheets (*{FILE_SUFFIX});;All files (*)"
 
+# Spec 011's two Greek-letter keyboard-shortcut layers: letter -> the GREEK name it inserts.
+# Layer 1 (Ctrl+Shift+<letter>): only letters that are both unique among the 23 lowercase Greek
+# names and not already claimed by an existing Ctrl+Shift+ app shortcut. The spec's own list of
+# already-claimed letters (A/P/M/C/E) missed one: "Save As" resolves QKeySequence::StandardKey
+# .SaveAs to "Ctrl+Shift+S" on this platform (a Qt standard key, not a literal string, so it
+# does not show up by grepping the codebase for "Ctrl+Shift+") -- confirmed by a real
+# QApplication raising "Ambiguous shortcut overload" the moment both existed. "S" (sigma) is
+# therefore excluded here too, by the spec's own stated rule, the same way A/P/M/C/E already are;
+# sigma stays fully reachable via layer 2's Ctrl+Alt+S instead. Flagged as a developer-found
+# deviation from the spec's own table (see docs/board/log.md).
+GREEK_SHORTCUTS_CTRL_SHIFT: tuple[tuple[str, str], ...] = (
+    ("B", "beta"), ("G", "gamma"), ("D", "delta"), ("Z", "zeta"), ("I", "iota"), ("K", "kappa"),
+    ("L", "lambda"), ("N", "nu"), ("X", "xi"), ("R", "rho"), ("U", "upsilon"),
+)
+# Layer 2 (Ctrl+Alt+<letter>, Theo's decision): full coverage of all 23 lowercase Greek names,
+# under a modifier combination otherwise unused anywhere in livesheet/gui/.
+GREEK_SHORTCUTS_CTRL_ALT: tuple[tuple[str, str], ...] = (
+    ("A", "alpha"), ("B", "beta"), ("C", "chi"), ("D", "delta"), ("E", "epsilon"), ("G", "gamma"),
+    ("H", "eta"), ("I", "iota"), ("K", "kappa"), ("L", "lambda"), ("M", "mu"), ("N", "nu"),
+    ("O", "omicron"), ("P", "phi"), ("Q", "psi"), ("R", "rho"), ("S", "sigma"), ("T", "theta"),
+    ("U", "upsilon"), ("W", "omega"), ("X", "xi"), ("Y", "tau"), ("Z", "zeta"),
+)
+
 HELP_HTML = """
 <h3>LiveSheet syntax</h3>
 <p>Click anywhere to place the red cross, then start typing. One statement per math region;
-regions are calculated top-to-bottom, left-to-right.</p>
+regions are calculated page by page, left to right and then top to bottom.</p>
 <table cellspacing="6">
 <tr><td><code>x := 5 m</code></td><td>definition (typing <b>:</b> inserts <code>:=</code>)</td></tr>
 <tr><td><code>f(x, y) := x^2 + y</code></td><td>function definition</td></tr>
@@ -116,28 +140,20 @@ class MainWindow(QMainWindow):
             self._repair_floating_toolbars()
 
     def _repair_floating_toolbars(self) -> None:
-        """Defend against a corrupted saved layout (spec 007 D1): a toolbar that a live drag
-        left floating -- rather than cleanly redocked -- gets its saved state replayed by
+        """Defend against a corrupted saved layout (spec 007 D1; simplified by spec 011's removal
+        of the Math toolbar, so there is now only one toolbar to validate): a toolbar that a live
+        drag left floating -- rather than cleanly redocked -- gets its saved state replayed by
         ``restoreState()`` on every future launch, including the "floating" bit, independent of
         the `setFloatable(False)` guard set at construction time (that guard only stops a *new*
         drag from detaching a toolbar; it does not retroactively validate bytes an old/corrupted
-        session already saved). A floating toolbar ends up rendered overlapping the docked
-        toolbar area instead of as a clean second row, which is exactly the squashed/clipped/
-        overlapping symptom reported against a live reorder. If restoring the saved state left
-        either toolbar floating, the whole toolbar layout is reset to the one default, known-good
-        arrangement (Standard above Math) rather than attempting to reposition just the one
-        floating toolbar, since there is no reliable saved position to fall back to once the
-        layout is known to be corrupted.
+        session already saved). If restoring the saved state left the Standard toolbar floating,
+        its layout is reset to the one default, known-good arrangement.
         """
-        if not (self.standard_toolbar.isFloating() or self.math_toolbar.isFloating()):
+        if not self.standard_toolbar.isFloating():
             return
-        for tb in (self.standard_toolbar, self.math_toolbar):
-            self.removeToolBar(tb)
+        self.removeToolBar(self.standard_toolbar)
         self.addToolBar(self.standard_toolbar)
-        self.addToolBarBreak()
-        self.addToolBar(self.math_toolbar)
         self.standard_toolbar.show()
-        self.math_toolbar.show()
 
     # -- UI construction --------------------------------------------------------
 
@@ -184,6 +200,7 @@ class MainWindow(QMainWindow):
         m.addAction(self._action("&Component…",
                                   lambda: self.sheet.insert_component_at(self.sheet.crosshair.pos()),
                                   "Ctrl+Shift+C"))
+        m.addAction(self._action("Page &Break", lambda: self.sheet.insert_page_break(), "Ctrl+Return"))
         m.addSeparator()
         for label, token in ((":=  Definition", ":= "), ("≡  Global definition", "≡ "),
                              ("=  Evaluate", " ="), ("→  Symbolic", " → ")):
@@ -221,26 +238,23 @@ class MainWindow(QMainWindow):
         self.standard_toolbar.addAction(self.action_export_pdf)
         self.standard_toolbar.addSeparator()
         self.standard_toolbar.addAction(self.action_recalculate)
-        self.addToolBarBreak()   # force the Math toolbar onto its own row, below Standard
 
-        tb = QToolBar("Math", self)
-        tb.setObjectName("math-toolbar")
-        tb.setFloatable(False)   # see the comment on standard_toolbar above
-        self.addToolBar(tb)
-        tb.addAction(self._action("Text", lambda: self.sheet.insert_region("text"), tip="Insert text region"))
-        tb.addSeparator()
-        for _category, label, token, tip in MATH_TOKENS:
-            act = self._action(label, lambda _=False, t=token: self.insert_token(t), tip=tip)
-            act.setToolTip(tip)
-            tb.addAction(act)
-        self.math_toolbar = tb
+        # -- Greek-letter keyboard shortcuts (spec 011 addenda 1/2): no visible menu entry of
+        # their own (purely keyboard shortcuts), registered directly on the window so they fire
+        # regardless of which menu/toolbar/dock has focus.
+        for letter, name in GREEK_SHORTCUTS_CTRL_SHIFT:
+            self.addAction(self._action(name, lambda _=False, t=name: self.insert_token(t),
+                                        f"Ctrl+Shift+{letter}"))
+        for letter, name in GREEK_SHORTCUTS_CTRL_ALT:
+            self.addAction(self._action(name, lambda _=False, t=name: self.insert_token(t),
+                                        f"Ctrl+Alt+{letter}"))
 
         # -- side panel (phase G2) --------------------------------------------------
         self.side_panel = SidePanel(self.insert_token, self)
         self.addDockWidget(Qt.DockWidgetArea.LeftDockWidgetArea, self.side_panel)
         self.view.setMinimumWidth(400)   # the canvas keeps >=400px even at the dock's max width
         # QMainWindow.saveState() persists dock geometry/visibility but not a child QTabWidget's
-        # own current-tab state, so the active Symbols/Outline/Data tab is tracked separately.
+        # own current-tab state, so the active tab is tracked separately.
         self.side_panel.tabs.setCurrentIndex(self.settings.value("side_panel_tab", 0, type=int))
         self.side_panel.tabs.currentChanged.connect(
             lambda i: self.settings.setValue("side_panel_tab", i))
@@ -249,9 +263,6 @@ class MainWindow(QMainWindow):
         standard_toggle = self.standard_toolbar.toggleViewAction()
         standard_toggle.setText("Standard Toolbar")
         view_menu.addAction(standard_toggle)
-        math_toggle = self.math_toolbar.toggleViewAction()
-        math_toggle.setText("Math Toolbar")
-        view_menu.addAction(math_toggle)
         side_panel_toggle = self.side_panel.toggleViewAction()
         side_panel_toggle.setText("Side Panel")
         view_menu.addAction(side_panel_toggle)
@@ -282,6 +293,8 @@ class MainWindow(QMainWindow):
 
     def delete_selected(self) -> None:
         self.sheet.remove_regions([r for r in self.sheet.regions() if r.isSelected()])
+        self.sheet.remove_page_breaks(
+            [i for i in self.sheet.selectedItems() if isinstance(i, PageBreakItem)])
 
     def select_all(self) -> None:
         for r in self.sheet.regions():
@@ -463,6 +476,34 @@ class MainWindow(QMainWindow):
             event.ignore()
 
 
+def pdf_strips(breaks: list[float], bottom: float, page_h: float) -> list[tuple[float, float]]:
+    """The (top, height) scene strips to print, one per sheet (spec 021). Without breaks: the
+    continuous canvas sliced into ``page_h`` strips. With breaks: each logical page is sliced from
+    its own top and never spills into the next page; a break always starts a fresh sheet. Empty
+    logical pages after the first are skipped."""
+    if not breaks:
+        out: list[tuple[float, float]] = []
+        top = 0.0
+        while True:
+            out.append((top, page_h))
+            top += page_h
+            if top >= bottom:
+                return out
+    starts = [0.0] + list(breaks)
+    out = []
+    for i, start in enumerate(starts):
+        end = min(starts[i + 1], bottom) if i + 1 < len(starts) else bottom
+        if i and end <= start:
+            continue
+        top = start
+        while True:
+            out.append((top, min(page_h, max(end - top, 0.0)) if end > top else page_h))
+            top += page_h
+            if top >= end:
+                break
+    return out
+
+
 def export_pdf(sheet: Worksheet, filename: str) -> None:
     """Render the worksheet to an A4 PDF, splitting it over pages."""
     editing = sheet.editing_region()
@@ -478,19 +519,26 @@ def export_pdf(sheet: Worksheet, filename: str) -> None:
     writer.setResolution(144)
     painter = QPainter(writer)
     target = QRectF(painter.viewport())
+    breaks = sheet.page_break_ys()
     scale = target.width() / PAGE_WIDTH
-    page_h = target.height() / scale
+    if breaks:
+        # A logical page is up to PAGE_HEIGHT tall and must fit one sheet (spec 021).
+        scale = min(scale, target.height() / PAGE_HEIGHT)
+        page_h = float(PAGE_HEIGHT)
+    else:
+        page_h = target.height() / scale
     bottom = max((r.sceneBoundingRect().bottom() for r in sheet.regions()), default=0) + 10
     sheet.printing = True
-    top = 0.0
     try:
-        while True:
-            source = QRectF(0, top, PAGE_WIDTH, page_h)
-            sheet.render(painter, QRectF(0, 0, target.width(), target.height()), source)
-            top += page_h
-            if top >= bottom:
-                break
-            writer.newPage()
+        for i, (top, height) in enumerate(pdf_strips(breaks, bottom, page_h)):
+            if i:
+                writer.newPage()
+            source = QRectF(0, top, PAGE_WIDTH, height)
+            if breaks:
+                dest = QRectF(0, 0, PAGE_WIDTH * scale, height * scale)
+            else:
+                dest = QRectF(0, 0, target.width(), target.height())
+            sheet.render(painter, dest, source)
     finally:
         painter.end()
         sheet.printing = False

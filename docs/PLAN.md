@@ -14,16 +14,17 @@ as an original implementation on SymPy + PySide6, clean-room (see IP-POLICY.md).
 | modeling-specialist | component/wiring (dataflow) specs, grounded only in generic public-domain concepts | board/specs |
 | developer | the only agent that changes production code | livesheet/, tests for own code |
 | tester | independent black-box tests + review | tests/, board/reviews |
+| documenter | end-user manual (how-to + error messages), only for specs the manager has fully accepted; never reads vendor docs | docs/manual |
 
 Communication: subagents start with only their delegation prompt, but since 2026-10-29 every agent also carries ListAgents/SendMessage, so they may message each other directly for quick coordination instead of only relaying through the manager (Theo's request). docs/board (specs, reviews, log, decisions) stays the durable record: the developer only ever implements from a spec that already passed the manager's IP review there, never from chat alone, and any chat clarification that changes something gets written back into docs/board.
 
 ## Skills (.claude/skills)
-mathcad-concepts, gui-concepts, modeling-concepts (idea maps from public product/design/generic descriptions), ip-cleanroom, spec-writing, livesheet-dev, livesheet-testing.
+mathcad-concepts, gui-concepts, modeling-concepts (idea maps from public product/design/generic descriptions), ip-cleanroom, spec-writing, livesheet-dev, livesheet-testing, user-manual-writing.
 
 Note (2026-10-29): the mathematica-specialist and maple-specialist agents and their concept skills were dropped (low output relative to upkeep). The underlying feature ideas stay in the backlog; mathcad-specialist or Theo now originate specs for them.
 
 ## Cycle per feature
-spec (specialist) -> IP review (manager) -> implement (developer) -> test + review (tester) -> fix -> merge.
+spec (specialist) -> IP review (manager) -> implement (developer) -> test + review (tester) -> fix -> merge -> manual update (documenter).
 Parallel allowed for independent specs; developer works one spec at a time.
 
 ## Milestones

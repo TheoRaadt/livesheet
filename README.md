@@ -25,7 +25,7 @@ Windows: use `.venv\Scripts\activate` instead of `source …`.
 ## How it works
 
 Click anywhere to place the red cross, then start typing. Each math region holds one statement.
-Regions are calculated **top to bottom, then left to right**, so moving a region can change the result.
+Regions are calculated **left to right, then top to bottom** (page by page, if you use page breaks), so moving a region can change the result.
 
 | Type this | Meaning |
 |---|---|

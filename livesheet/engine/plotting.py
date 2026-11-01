@@ -13,6 +13,7 @@ from dataclasses import dataclass, field
 
 import sympy as sp
 
+from .sampling import split_top as _split_top
 from .syntax import StatementError
 from .units import Measured, UnitError, dims_to_text, measure
 
@@ -156,19 +157,6 @@ def _read_options(lines: list[tuple[str, str]]) -> _Options:
     return opts
 
 
-def _split_top(text: str, words: tuple[str, ...]) -> list[tuple[str, str]]:
-    """Split ``text`` at top-level whitespace-delimited ``words``: [("", head), (word, piece), ...]."""
-    pieces: list[tuple[str, list[str]]] = [("", [])]
-    depth = 0
-    for token in re.split(r"(\s+)", text):
-        if token.strip() and depth == 0 and token in words:
-            pieces.append((token, []))
-            continue
-        pieces[-1][1].append(token)
-        depth += sum(token.count(c) for c in "([{") - sum(token.count(c) for c in ")]}")
-    return [(word, "".join(parts).strip()) for word, parts in pieces]
-
-
 def _real(value: complex) -> float:
     """Real value of a complex number; NaN when not finite or genuinely complex."""
     if math.isnan(value.real) or math.isnan(value.imag):
@@ -308,10 +296,14 @@ class _Builder:
             return self._vector_trace(text)
         local = dict(self.env)
         local[self.x_name] = self.sym * self.unit_expr
-        value = self.engine.parse(text, local)
-        _require_scalar(value, text)
-        self._check_defined(value)
         try:
+            # a plain (non-Lambda) callable worksheet function -- e.g. a spec 010 ODE's
+            # numeric solution -- cannot be evaluated symbolically with a dummy sweep
+            # variable, so the whole fast attempt (parse included) falls back to
+            # point-by-point evaluation on any failure, not just a lambdify failure.
+            value = self.engine.parse(text, local)
+            _require_scalar(value, text)
+            self._check_defined(value)
             return self._fast(value)
         except Exception:  # noqa: BLE001 - anything unusual: evaluate point by point instead
             return self._slow(text)

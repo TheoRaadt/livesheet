@@ -21,6 +21,8 @@ from __future__ import annotations
 import re
 from dataclasses import dataclass, field
 
+from .sampling import split_sampling
+
 _IDENT = r"[^\W\d]\w*"
 _LHS_RE = re.compile(rf"^\s*({_IDENT})\s*(?:\(\s*([^)]*)\))?\s*$")
 _IDENT_RE = re.compile(rf"^{_IDENT}$")
@@ -69,6 +71,12 @@ class Statement:
     goal: str = ""                # model_result: root | min | max
     relations: list[str] = field(default_factory=list)  # model_require: one text per relation
     plot_lines: list[tuple[str, str]] = field(default_factory=list)  # plot: (keyword, remainder)
+    conditions: list[tuple[str, int, str, str]] = field(default_factory=list)
+    # model_ic: one 4-tuple per condition (function name, derivative order, point text, value text)
+    over_points: str = ""        # model_over: the sampling count text (empty means the default)
+    node: str = ""               # model_support/model_load: the node-index expression text
+    axes: list[tuple[str, str]] = field(default_factory=list)
+    # model_support/model_load: one (axis letter, value text or "") pair per fix/fx/fy item
 
 
 def normalize(text: str) -> str:
@@ -274,16 +282,39 @@ def _split_column_unit(col: str) -> tuple[str, str]:
 
 # -- solve models: ``... in <name>`` tagged regions --------------------------------------
 
+_TRUSS_EXPR_KEYWORDS = {
+    "nodes": "model_truss_nodes", "elements": "model_truss_elements",
+    "area": "model_truss_area", "modulus": "model_truss_modulus",
+}
+
+
 def _parse_model(text: str) -> Statement | None:
     mt = _MODEL_TAG_RE.match(text)
     if mt is None:
         return None
     body, name = mt.group(1).strip(), mt.group(2)
-    if any(op in body for op in _STATEMENT_OPS) or _split_eval(body) is not None:
-        return None  # an ordinary statement that happens to end in `in <word>`
     word = re.match(r"^(\w+)", body)
     keyword = word.group(1) if word else ""
+    if any(op in body for op in _STATEMENT_OPS):
+        return None  # an ordinary statement that happens to end in `in <word>`
+    # ``support``'s own grammar legitimately contains a bare ``=`` (``x = <value>``),
+    # unlike every other model keyword, so it alone is exempt from this specific bare-``=``
+    # check (not the ``_STATEMENT_OPS`` check above, which still applies to every keyword).
+    if keyword != "support" and _split_eval(body) is not None:
+        return None  # an ordinary statement that happens to end in `in <word>`
     rest = body[len(keyword):].strip() if keyword else body
+    if keyword in _TRUSS_EXPR_KEYWORDS:
+        if not rest:
+            raise StatementError(f'"{keyword}" needs an expression')
+        return Statement(_TRUSS_EXPR_KEYWORDS[keyword], model=name, expr=rest)
+    if keyword == "support":
+        return _parse_support(rest, name)
+    if keyword == "load":
+        return _parse_load(rest, name)
+    if keyword == "resolve":
+        if rest:
+            raise StatementError("resolve takes no expression")
+        return Statement("model_result", model=name, goal="truss")
     if keyword == "vary":
         return Statement("model_vary", model=name, guesses=_parse_guesses(rest))
     if keyword == "settle":
@@ -296,10 +327,88 @@ def _parse_model(text: str) -> Statement | None:
         return Statement("model_result", model=name, goal="min" if keyword == "least" else "max", expr=rest)
     if keyword in ("accuracy", "steps") and rest:
         return Statement("model_setting", model=name, name=keyword, expr=rest)
+    if keyword == "ode":
+        if not rest:
+            raise StatementError("ode needs an equation")
+        split_ode_equation(rest)   # validates shape only; the full text is re-parsed at solve time
+        return Statement("model_ode", model=name, expr=rest)
+    if keyword == "start":
+        if not rest:
+            raise StatementError('Use "start f(point) == value" (optionally f\'(point) == ..., ...)')
+        return Statement("model_ic", model=name, conditions=_parse_conditions(rest))
+    if keyword == "over":
+        parsed = split_sampling(rest) if rest else None
+        if parsed is None:
+            raise StatementError("over needs 'NAME from A to B [points N]'")
+        head, start_text, end_text, points_text = parsed
+        return Statement("model_over", model=name, name=head, expr=start_text,
+                         range_end=end_text, over_points=points_text)
+    if keyword == "evolve":
+        goal_word = rest.strip()
+        if goal_word == "":
+            goal = "ode_auto"
+        elif goal_word == "symbolic":
+            goal = "ode_symbolic"
+        elif goal_word == "numeric":
+            goal = "ode_numeric"
+        else:
+            raise StatementError("evolve takes 'symbolic', 'numeric' or nothing")
+        return Statement("model_result", model=name, goal=goal)
     relations = _split_relations(body)
     if relations is None:
         raise StatementError('A relation is required before "in ' + name + '"')
     return Statement("model_require", model=name, relations=relations)
+
+
+_SUPPORT_SPLIT_RE = re.compile(r"^(.+?)\s+fix\b(.*)$", re.DOTALL)
+_SUPPORT_ITEM_RE = re.compile(r"^(x|y)(?:\s*=\s*(.+))?$", re.DOTALL)
+_SUPPORT_ERROR = 'Use "support <node> fix x, y" (optionally "x = <value>")'
+
+_LOAD_SPLIT_RE = re.compile(r"\b(?:fx|fy)\b")
+_LOAD_ITEM_RE = re.compile(r"^(fx|fy)\s+(.+)$", re.DOTALL)
+_LOAD_ERROR = 'Use "load <node> fx <value>, fy <value>" (either or both)'
+
+
+def _parse_axis_items(items_text: str, item_re: re.Pattern, error: str) -> list[tuple[str, str]]:
+    """Split a comma-separated list of ``x``/``y`` (support) or ``fx``/``fy`` (load) items,
+    shared by ``model_support`` and ``model_load``; ``item_re`` fixes the accepted shape and
+    whether a value is required. The axis letter in the returned pairs is always ``x``/``y``."""
+    axes: list[tuple[str, str]] = []
+    for part in _split_top_level(items_text):
+        part = part.strip()
+        mt = item_re.match(part)
+        if mt is None:
+            raise StatementError(error)
+        axis = mt.group(1)
+        axis = axis[1] if len(axis) == 2 else axis   # fx/fy -> x/y
+        value = (mt.group(2) or "").strip()
+        axes.append((axis, value))
+    if not axes:
+        raise StatementError(error)
+    return axes
+
+
+def _parse_support(rest: str, name: str) -> Statement:
+    mt = _SUPPORT_SPLIT_RE.match(rest)
+    if mt is None or not mt.group(1).strip():
+        raise StatementError(_SUPPORT_ERROR)
+    node_text, items_text = mt.group(1).strip(), mt.group(2).strip()
+    axes = _parse_axis_items(items_text, _SUPPORT_ITEM_RE, _SUPPORT_ERROR)
+    return Statement("model_support", model=name, node=node_text, axes=axes)
+
+
+def _parse_load(rest: str, name: str) -> Statement:
+    mt = _LOAD_SPLIT_RE.search(rest)
+    if mt is None or not rest[:mt.start()].strip():
+        raise StatementError(_LOAD_ERROR)
+    node_text, items_text = rest[:mt.start()].strip(), rest[mt.start():].strip()
+    axes = _parse_axis_items(items_text, _LOAD_ITEM_RE, _LOAD_ERROR)
+    seen: set[str] = set()
+    for axis, _value in axes:
+        if axis in seen:
+            raise StatementError('"fx"/"fy" given twice on one load line')
+        seen.add(axis)
+    return Statement("model_load", model=name, node=node_text, axes=axes)
 
 
 def _parse_guesses(rest: str) -> list[tuple[str, str]]:
@@ -315,6 +424,67 @@ def _parse_guesses(rest: str) -> list[tuple[str, str]]:
     if not guesses:
         raise StatementError('Use "vary x from <guess> in <name>"')
     return guesses
+
+
+# -- ODE systems: ``ode``/``start``/``over``/``evolve`` lines (spec 010) -----------------
+
+_ODE_PREFIX_RE = re.compile(
+    rf"^diff\(\s*({_IDENT})\(\s*({_IDENT})\s*\)\s*,\s*({_IDENT})\s*(?:,\s*(\d+)\s*)?\)"
+)
+_START_ITEM_RE = re.compile(rf"^({_IDENT})('*)\(\s*(.+?)\s*\)\s*==\s*(.+)$", re.DOTALL)
+_ODE_SHAPE_ERROR = "Write the highest derivative alone on the left: diff(name(t), t[, n]) == ..."
+
+
+def _split_top_equation(text: str) -> tuple[str, str] | None:
+    """Split ``text`` at its one top-level ``==``; ``None`` when there isn't exactly one."""
+    depth, i, found = 0, 0, []
+    while i < len(text):
+        ch = text[i]
+        if ch in "([{":
+            depth += 1
+        elif ch in ")]}":
+            depth -= 1
+        elif depth == 0 and text[i:i + 2] == "==":
+            found.append(i)
+            i += 2
+            continue
+        i += 1
+    if len(found) != 1:
+        return None
+    pos = found[0]
+    return text[:pos].strip(), text[pos + 2:].strip()
+
+
+def split_ode_equation(text: str) -> tuple[str, str, int]:
+    """Validate and read an ``ode`` line's equation text (before the trailing ``in <name>``
+    tag): (function name, independent-variable name, order). The derivative term must start
+    the left side (it may be followed by other additive terms, as the worked examples show);
+    raises on any other shape."""
+    parts = _split_top_equation(text)
+    if parts is None:
+        raise StatementError(_ODE_SHAPE_ERROR)
+    lhs, _rhs = parts
+    mt = _ODE_PREFIX_RE.match(lhs)
+    if mt is None:
+        raise StatementError(_ODE_SHAPE_ERROR)
+    func_name, func_var, indep_name, order_text = mt.groups()
+    if func_var != indep_name:
+        raise StatementError(_ODE_SHAPE_ERROR)
+    return func_name, indep_name, int(order_text) if order_text else 1
+
+
+def _parse_conditions(rest: str) -> list[tuple[str, int, str, str]]:
+    conditions = []
+    for item in _split_top_level(rest):
+        item = item.strip()
+        mt = _START_ITEM_RE.match(item)
+        if mt is None:
+            raise StatementError('Use "start f(point) == value" (optionally f\'(point) == ..., ...)')
+        name, primes, point, value = mt.groups()
+        conditions.append((name, len(primes), point.strip(), value.strip()))
+    if not conditions:
+        raise StatementError('Use "start f(point) == value" (optionally f\'(point) == ..., ...)')
+    return conditions
 
 
 def _split_relations(body: str) -> list[str] | None:

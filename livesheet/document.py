@@ -6,10 +6,13 @@ import json
 from dataclasses import dataclass, field
 from pathlib import Path
 
+from .engine.pagination import order_key
+
 FORMAT_NAME = "livesheet"
 FORMAT_VERSION = 1              # written for sheets without plots or components
 FORMAT_VERSION_PLOT = 2         # written when the sheet holds a plot (no components)
-FORMAT_VERSION_COMPONENTS = 3   # written when the sheet holds a component or wire; highest we read
+FORMAT_VERSION_COMPONENTS = 3   # written when the sheet holds a component or wire
+FORMAT_VERSION_PAGES = 4        # written when the sheet has page breaks; highest we read
 DEFAULT_PLOT_SIZE = (400.0, 260.0)
 FILE_SUFFIX = ".lsheet"
 
@@ -80,19 +83,38 @@ class WireData:
         }
 
 
+def _parse_page_breaks(raw: object) -> list[float]:
+    """Lenient: non-numeric or malformed entries are dropped; result is sorted ascending."""
+    if not isinstance(raw, list):
+        return []
+    out: list[float] = []
+    for item in raw:
+        if isinstance(item, bool) or not isinstance(item, (int, float)):
+            continue
+        value = float(item)
+        if value == value and abs(value) != float("inf"):
+            out.append(value)
+    return sorted(out)
+
+
 @dataclass
 class SheetDocument:
     regions: list[RegionData] = field(default_factory=list)
     significant: int = 6
     wires: list[WireData] = field(default_factory=list)
+    page_breaks: list[float] = field(default_factory=list)   # y-coordinates, ascending
 
     def ordered(self) -> list[RegionData]:
-        """Regions in reading order: top to bottom, then left to right."""
-        return sorted(self.regions, key=lambda r: (r.y, r.x))
+        """Regions in evaluation order: page by page, left to right, then top to bottom.
+        The sort is stable, so regions at an identical position keep their list order."""
+        breaks = sorted(self.page_breaks)
+        return sorted(self.regions, key=lambda r: order_key(r.x, r.y, breaks))
 
     def version(self) -> int:
-        """Format version to write: 3 only when a component or wire is present, else the
+        """Format version to write: 4 only when page breaks exist, else 3 only when a component or wire is present, else the
         existing plot-or-not logic (2 / 1), completely unchanged for component-free sheets."""
+        if self.page_breaks:
+            return FORMAT_VERSION_PAGES
         if any(r.kind == "component" for r in self.regions) or self.wires:
             return FORMAT_VERSION_COMPONENTS
         has_plot = any(r.kind == "plot" for r in self.regions)
@@ -110,6 +132,8 @@ class SheetDocument:
         # through exactly the same JSON shape it always has.
         if self.wires:
             data["wires"] = [w.to_dict() for w in self.wires]
+        if self.page_breaks:
+            data["page_breaks"] = [float(b) for b in sorted(self.page_breaks)]
         return json.dumps(data, indent=2, ensure_ascii=False)
 
     @classmethod
@@ -120,7 +144,7 @@ class SheetDocument:
             raise DocumentError(f"Not a valid LiveSheet file: {exc}") from None
         if not isinstance(data, dict) or data.get("format") != FORMAT_NAME:
             raise DocumentError("Not a LiveSheet file")
-        if int(data.get("version", 0)) > FORMAT_VERSION_COMPONENTS:
+        if int(data.get("version", 0)) > FORMAT_VERSION_PAGES:
             raise DocumentError("This file was made with a newer LiveSheet version")
         regions = []
         for raw in data.get("regions", []):
@@ -148,6 +172,7 @@ class SheetDocument:
                     str(raw["to_component"]), str(raw["to_port"])))
             except (KeyError, TypeError, ValueError):
                 continue
+        page_breaks = _parse_page_breaks(data.get("page_breaks"))
         settings = data.get("settings", {}) or {}
         sig = int(settings.get("significant", 6))
         # Version 3 is only meaningful when the file actually holds a component or a wire
@@ -156,11 +181,12 @@ class SheetDocument:
         # component support actually produced, so it's treated the same as "newer than what
         # this build understands" rather than silently accepted.
         version = int(data.get("version", 0))
-        if version >= FORMAT_VERSION_COMPONENTS and not (
+        if version == FORMAT_VERSION_COMPONENTS and not (
             any(r.kind == "component" for r in regions) or wires
         ):
             raise DocumentError("This file was made with a newer LiveSheet version")
-        return cls(regions=regions, significant=max(2, min(15, sig)), wires=wires)
+        return cls(regions=regions, significant=max(2, min(15, sig)), wires=wires,
+                   page_breaks=page_breaks)
 
     def save(self, path: str | Path) -> None:
         Path(path).write_text(self.to_json(), encoding="utf-8")

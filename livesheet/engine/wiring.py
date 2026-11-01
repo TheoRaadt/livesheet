@@ -2,7 +2,7 @@
 
 GUI-independent, like the rest of ``livesheet/engine``: builds the directed graph implied by a
 sheet's components and wires, computes a deterministic evaluation order with Kahn's algorithm
-(reusing the existing top-to-bottom/left-to-right reading-order key only to break ties between
+(reusing the page-aware (x, y) evaluation-order key only to break ties between
 components the wiring graph does not otherwise order), detects cycles (reused both when a wire is
 about to be created and, defensively, at evaluation time), and implements the two placeholder
 component kinds ("value", "formula") as thin wrappers around ``Engine.parse`` -- no second
@@ -13,9 +13,13 @@ from __future__ import annotations
 
 import heapq
 from dataclasses import dataclass, field
-from typing import Callable
+from typing import Callable, Sequence
 
+import sympy as sp
+
+from .cadprofile import CadProfileError, read_profile, section_properties
 from .evaluator import Engine, _check_defined
+from .pagination import order_key
 from .syntax import StatementError
 from .units import UNITS, UnitError, measure
 
@@ -71,9 +75,15 @@ def _formula_ports(config: dict[str, str]) -> tuple[list[tuple[str, bool]], list
     return [(n, True) for n in names], ["result"]
 
 
+def _cad_profile_ports(config: dict[str, str]) -> tuple[list[tuple[str, bool]], list[str]]:
+    return [], ["area", "centroid_x", "centroid_y", "Ixx", "Iyy", "Ixy", "J", "rx", "ry",
+                "Sx_top", "Sx_bottom", "Sy_left", "Sy_right", "outline"]
+
+
 _PORTS: dict[str, Callable[[dict[str, str]], tuple[list[tuple[str, bool]], list[str]]]] = {
     "value": _value_ports,
     "formula": _formula_ports,
+    "cad-profile": _cad_profile_ports,
 }
 
 
@@ -109,9 +119,38 @@ def _compute_formula(config: dict[str, str], inputs: dict[str, object], engine: 
     return {"result": value}
 
 
+def _compute_cad_profile(config: dict[str, str], inputs: dict[str, object], engine: Engine) -> dict[str, object]:
+    loops, unit_name = read_profile(
+        config.get("path", ""), config.get("layer", ""), config.get("unit", ""))
+    props = section_properties(loops)
+    unit = UNITS[unit_name]
+    # Spec 014: ``outline`` concatenates every loop's own vertex list, outer loop first then
+    # each hole in the order it was found (``read_profile``/``assemble_loops`` already ordered
+    # them that way) -- a plain spec-013 single-loop profile is just the one-loop case of this
+    # same concatenation, so this is unchanged for that case (``loops`` has exactly one entry).
+    vertices = [v for loop in loops for v in loop]
+    return {
+        "area": props.area * unit ** 2,
+        "centroid_x": props.centroid_x * unit,
+        "centroid_y": props.centroid_y * unit,
+        "Ixx": props.Ixx * unit ** 4,
+        "Iyy": props.Iyy * unit ** 4,
+        "Ixy": props.Ixy * unit ** 4,
+        "J": props.J * unit ** 4,
+        "rx": props.rx * unit,
+        "ry": props.ry * unit,
+        "Sx_top": props.Sx_top * unit ** 3,
+        "Sx_bottom": props.Sx_bottom * unit ** 3,
+        "Sy_left": props.Sy_left * unit ** 3,
+        "Sy_right": props.Sy_right * unit ** 3,
+        "outline": sp.Matrix([[sp.Float(x) * unit, sp.Float(y) * unit] for x, y in vertices]),
+    }
+
+
 _COMPUTE: dict[str, Callable[[dict[str, str], dict[str, object], Engine], dict[str, object]]] = {
     "value": _compute_value,
     "formula": _compute_formula,
+    "cad-profile": _compute_cad_profile,
 }
 
 
@@ -121,6 +160,8 @@ def format_output(value: object, significant: int = 6) -> str:
     from .formatting import format_number
     from .units import dims_to_text
 
+    if isinstance(value, sp.MatrixBase):
+        return _format_matrix(value, significant)
     try:
         m = measure(value)
     except Exception:  # noqa: BLE001 - best-effort display only
@@ -130,14 +171,53 @@ def format_output(value: object, significant: int = 6) -> str:
     return f"{number} {unit}" if unit else number
 
 
+def _format_matrix(m: sp.MatrixBase, significant: int) -> str:
+    """Grid text for a matrix-valued output -- same convention as ``Engine._numeric_matrix``
+    (same ``MAX_SHOWN`` size cap and placeholder; per-cell units may differ, same as there), just
+    without the ``unit_text``/``env`` unit-conversion step, since ``format_output`` has no
+    GUI/env context to convert into."""
+    from .evaluator import MAX_SHOWN
+    from .formatting import format_number
+    from .units import dims_to_text
+
+    if m.rows > MAX_SHOWN or m.cols > MAX_SHOWN:
+        return f"[{m.rows}x{m.cols} matrix]"
+
+    def cell_text(meas) -> str:
+        if meas is None:
+            return "?"
+        number = format_number(meas.magnitude, significant)
+        unit = dims_to_text(meas.dims)
+        return f"{number} {unit}" if unit else number
+
+    measured = []
+    for e in m:
+        try:
+            measured.append(measure(e))
+        except Exception:  # noqa: BLE001 - best-effort display only
+            measured.append(None)
+    # a zero without a unit fits any dimension; a zero that kept its unit counts (same rule as
+    # Engine._numeric_matrix)
+    shared = {x.dims for x in measured if x is not None and (x.magnitude != 0 or x.dims)}
+    if len(shared) <= 1:
+        dims = next(iter(shared), ())
+        cells = [format_number(x.magnitude, significant) if x is not None else "?" for x in measured]
+        suffix = " " + dims_to_text(dims) if dims else ""
+    else:
+        cells = [cell_text(x) for x in measured]
+        suffix = ""
+    grid = [cells[r * m.cols:(r + 1) * m.cols] for r in range(m.rows)]
+    rows = [", ".join(r) for r in grid]
+    return "[" + "; ".join(rows) + "]" + suffix
+
+
 # -- graph: topological order (Kahn's algorithm) + cycle detection ------------------------------
 
-def topo_sort(names: list[str], pos_of: dict[str, tuple[float, float]],
+def topo_sort(names: list[str], pos_of: dict[str, tuple[int, int, int]],
               edges: set[tuple[str, str]]) -> tuple[list[str], set[str]]:
     """Kahn's algorithm: returns ``(order, remainder)``. ``remainder`` is the set of nodes that
     could not be placed (non-empty exactly when ``edges`` contains a cycle). Among nodes with no
-    remaining incoming edges, the one earliest in ``pos_of`` (today's ``(y, x)`` reading-order
-    key) is picked next -- a deterministic tie-break applied only between components the wiring
+    remaining incoming edges, the one earliest in ``pos_of`` (page-aware ``(page, x, y)`` key) is picked next -- a deterministic tie-break applied only between components the wiring
     graph does not otherwise order, never the primary ordering rule."""
     preds: dict[str, set[str]] = {n: set() for n in names}
     succ: dict[str, list[str]] = {n: [] for n in names}
@@ -147,7 +227,7 @@ def topo_sort(names: list[str], pos_of: dict[str, tuple[float, float]],
         preds[b].add(a)
         succ[a].append(b)
     indeg = {n: len(preds[n]) for n in names}
-    heap = [(pos_of.get(n, (0.0, 0.0)), n) for n in names if indeg[n] == 0]
+    heap = [(pos_of.get(n, (0, 0, 0)), n) for n in names if indeg[n] == 0]
     heapq.heapify(heap)
     order: list[str] = []
     while heap:
@@ -156,7 +236,7 @@ def topo_sort(names: list[str], pos_of: dict[str, tuple[float, float]],
         for m in succ[n]:
             indeg[m] -= 1
             if indeg[m] == 0:
-                heapq.heappush(heap, (pos_of.get(m, (0.0, 0.0)), m))
+                heapq.heappush(heap, (pos_of.get(m, (0, 0, 0)), m))
     remainder = set(names) - set(order)
     return order, remainder
 
@@ -176,8 +256,10 @@ def would_create_cycle(names: list[str], edges: set[tuple[str, str]],
 
 # -- evaluation ----------------------------------------------------------------------------------
 
-def evaluate(specs: list[ComponentSpec], wires: list[WireSpec], engine: Engine) -> dict[str, ComponentResult]:
-    """Evaluate every component in topological order of the wiring graph (not reading order).
+def evaluate(specs: list[ComponentSpec], wires: list[WireSpec], engine: Engine,
+             page_breaks: Sequence[float] = ()) -> dict[str, ComponentResult]:
+    """Evaluate every component in topological order of the wiring graph (not position order).
+    ``page_breaks`` (y-coordinates) makes the position tie-break page-aware (spec 021).
 
     Called with an empty ``specs``/``wires`` list on a sheet with no components -- returns ``{}``
     immediately, which is what keeps this pass a true no-op for component-free sheets."""
@@ -185,7 +267,8 @@ def evaluate(specs: list[ComponentSpec], wires: list[WireSpec], engine: Engine) 
         return {}
     names = [s.name for s in specs]
     by_name = {s.name: s for s in specs}
-    pos_of = {s.name: (s.y, s.x) for s in specs}
+    breaks = sorted(page_breaks)
+    pos_of = {s.name: order_key(s.x, s.y, breaks) for s in specs}
     name_set = set(names)
     edges = {(w.from_component, w.to_component) for w in wires
              if w.from_component in name_set and w.to_component in name_set}
@@ -229,7 +312,7 @@ def evaluate(specs: list[ComponentSpec], wires: list[WireSpec], engine: Engine) 
         try:
             outputs = _COMPUTE[spec.kind](spec.config, inputs, engine)
             results[name] = ComponentResult("ok", "", outputs)
-        except (StatementError, UnitError) as exc:
+        except (StatementError, UnitError, CadProfileError) as exc:
             results[name] = ComponentResult("error", str(exc))
         except ZeroDivisionError:
             results[name] = ComponentResult("error", "Division by zero")

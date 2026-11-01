@@ -66,15 +66,16 @@ def _close(win: MainWindow) -> None:
 # Toolbars & menu (criteria 1-4)
 # ---------------------------------------------------------------------------
 
-def test_criterion1_two_stacked_toolbars_on_first_launch():
+def test_criterion1_standard_toolbar_present_math_toolbar_removed_spec011():
+    """Spec 011 criterion 1: the Math toolbar is gone entirely; Standard is unaffected."""
     win = _make_window()
     win.show()
     QApplication.processEvents()
     standard = win.findChild(QToolBar, "standard-toolbar")
-    math_tb = win.findChild(QToolBar, "math-toolbar")
-    assert standard is not None and math_tb is not None
-    assert standard.isVisible() and math_tb.isVisible()
-    assert standard.isMovable() and math_tb.isMovable()
+    assert standard is not None
+    assert standard.isVisible() and standard.isMovable()
+    assert win.findChild(QToolBar, "math-toolbar") is None
+    assert not hasattr(win, "math_toolbar")
     _close(win)
 
 
@@ -89,43 +90,44 @@ def test_criterion2_standard_toolbar_actions_are_the_same_objects_in_order():
     _close(win)
 
 
-def test_criterion3_toolbar_view_toggles_are_independent():
+def test_criterion3_standard_toolbar_toggle_still_present_and_independent_spec011():
+    """Spec 011 criterion 1: Standard keeps its own 'Standard Toolbar' View entry, unaffected by
+    the Math toolbar's removal; there is no 'Math Toolbar' entry anywhere in View."""
     win = _make_window()
     win.show()
     QApplication.processEvents()
     standard = win.findChild(QToolBar, "standard-toolbar")
-    math_tb = win.findChild(QToolBar, "math-toolbar")
     standard_action = standard.toggleViewAction()
-    math_action = math_tb.toggleViewAction()
     assert standard_action.text() == "Standard Toolbar"
-    assert math_action.text() == "Math Toolbar"
+    view_menu = next(m for m in win.menuBar().findChildren(type(win.menuBar().addMenu("x")))
+                      if m.title() == "&View")
+    assert not any(a.text() == "Math Toolbar" for a in view_menu.actions())
     standard_action.trigger()
     assert not standard.isVisible()
-    assert math_tb.isVisible()   # toggling one did not affect the other
     _close(win)
 
 
 def test_criterion4_dragged_toolbar_position_persists_across_restart():
     win = _make_window()
-    math_tb = win.findChild(QToolBar, "math-toolbar")
-    win.addToolBar(Qt.ToolBarArea.BottomToolBarArea, math_tb)   # simulate a user drag
+    standard = win.findChild(QToolBar, "standard-toolbar")
+    win.addToolBar(Qt.ToolBarArea.BottomToolBarArea, standard)   # simulate a user drag
     _close(win)   # closeEvent persists saveState() under "window_state"
 
     win2 = _make_window()
-    math_tb2 = win2.findChild(QToolBar, "math-toolbar")
-    assert win2.toolBarArea(math_tb2) == Qt.ToolBarArea.BottomToolBarArea
+    standard2 = win2.findChild(QToolBar, "standard-toolbar")
+    assert win2.toolBarArea(standard2) == Qt.ToolBarArea.BottomToolBarArea
     _close(win2)
 
 
 def _bytes_from_a_toolbar_left_floating() -> "QByteArray":
-    """Build a throwaway, production-independent 2-toolbar window (same objectNames, same
-    addToolBar()/addToolBarBreak() shape as MainWindow's own setup) and drive a real QTest
-    press/move/release drag of the second toolbar's own handle, which this environment's
-    offscreen QPA platform reliably lands as a *floating* toolbar rather than a clean redock
-    (confirmed independently: this is also the exact state found in a real on-disk LiveSheet
-    preferences file left over from a tester's real-mouse drag session, see docs/board/log.md).
-    Returns the resulting ``saveState()`` bytes: a "corrupted" layout a real drag can produce,
-    used below to check that loading it back does not leave MainWindow in that broken state."""
+    """Build a throwaway, production-independent window with the same single toolbar objectName
+    as MainWindow's own (post spec-011) setup, and drive a real QTest press/move/release drag of
+    its handle, which this environment's offscreen QPA platform reliably lands as a *floating*
+    toolbar rather than a clean redock (confirmed independently: this is also the exact state
+    found in a real on-disk LiveSheet preferences file left over from a tester's real-mouse drag
+    session, see docs/board/log.md). Returns the resulting ``saveState()`` bytes: a "corrupted"
+    layout a real drag can produce, used below to check that loading it back does not leave
+    MainWindow in that broken state."""
     from PySide6.QtCore import QPoint
     from PySide6.QtGui import QAction
     from PySide6.QtTest import QTest
@@ -135,43 +137,37 @@ def _bytes_from_a_toolbar_left_floating() -> "QByteArray":
     standard.setObjectName("standard-toolbar")
     for label in ("New", "Open", "Save"):
         standard.addAction(QAction(label, probe))
-    math_tb = QToolBar("Math", probe)
-    math_tb.setObjectName("math-toolbar")
-    for label in ("pi", "sqrt", "d/dx"):
-        math_tb.addAction(QAction(label, probe))
     probe.addToolBar(standard)
-    probe.addToolBarBreak()
-    probe.addToolBar(math_tb)
     probe.resize(900, 600)
     probe.show()
     QApplication.processEvents()
 
     start_local = QPoint(5, 5)
-    QTest.mousePress(math_tb, Qt.MouseButton.LeftButton, Qt.KeyboardModifier.NoModifier, start_local)
+    QTest.mousePress(standard, Qt.MouseButton.LeftButton, Qt.KeyboardModifier.NoModifier, start_local)
     QApplication.processEvents()
-    start_global = math_tb.mapToGlobal(start_local)
+    start_global = standard.mapToGlobal(start_local)
     for step in range(1, 9):   # walk the press point upward, as a real drag would
-        target_local = math_tb.mapFromGlobal(start_global - QPoint(0, step * 4))
-        QTest.mouseMove(math_tb, target_local)
+        target_local = standard.mapFromGlobal(start_global - QPoint(0, step * 4))
+        QTest.mouseMove(standard, target_local)
         QApplication.processEvents()
-    QTest.mouseRelease(math_tb, Qt.MouseButton.LeftButton)
+    QTest.mouseRelease(standard, Qt.MouseButton.LeftButton)
     QApplication.processEvents()
-    assert math_tb.isFloating(), "fixture precondition: the probe drag must produce a floating toolbar"
+    assert standard.isFloating(), "fixture precondition: the probe drag must produce a floating toolbar"
     state = probe.saveState()
     probe.close()
     return state
 
 
 def test_d1_a_toolbar_left_floating_by_a_drag_does_not_squash_on_restart(isolated_settings):
-    """Regression for spec 007 review D1 (docs/board/reviews/007-main-window.md): a live
-    drag-reorder of the Math toolbar was found to be able to leave it *floating* instead of
-    cleanly redocked (confirmed both via a real `QTest` drag here and, independently, in an
-    actual on-disk LiveSheet preferences file left over from a tester's real-mouse session). A
-    floating toolbar's saved bytes get replayed by `restoreState()` on every future launch
-    regardless of the `setFloatable(False)` guard (that guard only stops a *new* detach; it does
-    not retroactively validate old/corrupted saved bytes), rendering it overlapping the docked
-    toolbar area -- the squashed/clipped/overlapping symptom the tester reported. MainWindow
-    must detect this on load and repair it to the normal stacked, non-floating layout."""
+    """Regression for spec 007 review D1 (docs/board/reviews/007-main-window.md), simplified by
+    spec 011's removal of the Math toolbar (only one toolbar left to validate): a live
+    drag-reorder was found to be able to leave a toolbar *floating* instead of cleanly redocked
+    (confirmed both via a real `QTest` drag here and, independently, in an actual on-disk
+    LiveSheet preferences file left over from a tester's real-mouse session). A floating
+    toolbar's saved bytes get replayed by `restoreState()` on every future launch regardless of
+    the `setFloatable(False)` guard (that guard only stops a *new* detach; it does not
+    retroactively validate old/corrupted saved bytes). MainWindow must detect this on load and
+    repair it to the normal, non-floating layout."""
     corrupted_state = _bytes_from_a_toolbar_left_floating()
 
     # Write directly into the isolated ini file this test's own MainWindow instances read from
@@ -185,14 +181,8 @@ def test_d1_a_toolbar_left_floating_by_a_drag_does_not_squash_on_restart(isolate
     win2.show()
     QApplication.processEvents()
     standard = win2.findChild(QToolBar, "standard-toolbar")
-    math_tb = win2.findChild(QToolBar, "math-toolbar")
-    assert not standard.isFloating() and not math_tb.isFloating()
+    assert not standard.isFloating()
     assert win2.toolBarArea(standard) == Qt.ToolBarArea.TopToolBarArea
-    assert win2.toolBarArea(math_tb) == Qt.ToolBarArea.TopToolBarArea
-    # Properly stacked: same x, same width, math directly below standard, no overlap.
-    assert standard.geometry().width() == math_tb.geometry().width()
-    assert standard.geometry().x() == math_tb.geometry().x()
-    assert math_tb.geometry().top() >= standard.geometry().bottom()
     _close(win2)
 
 
@@ -202,9 +192,8 @@ def test_toolbars_are_movable_but_not_floatable():
     criterion 4's drag-to-relocate) must still hold."""
     win = _make_window()
     standard = win.findChild(QToolBar, "standard-toolbar")
-    math_tb = win.findChild(QToolBar, "math-toolbar")
-    assert standard.isMovable() and math_tb.isMovable()
-    assert not standard.isFloatable() and not math_tb.isFloatable()
+    assert standard.isMovable()
+    assert not standard.isFloatable()
     _close(win)
 
 
@@ -221,17 +210,18 @@ def test_criterion5_side_panel_dock_tabs_and_default_dock_side():
     assert win.dockWidgetArea(dock) == Qt.DockWidgetArea.LeftDockWidgetArea
     tabs = win.side_panel.tabs
     assert tabs.objectName() == "side-panel-tabs"
-    assert [tabs.tabText(i) for i in range(tabs.count())] == ["Symbols", "Outline", "Data"]
+    assert [tabs.tabText(i) for i in range(tabs.count())] == \
+        ["Elements", "Algebra", "Calculus", "Statistics", "Optimization", "Outline", "Data"]
     side_panel_action = dock.toggleViewAction()
     assert side_panel_action.text() == "Side Panel"
     assert side_panel_action.isChecked()   # checked by default on first launch
     _close(win)
 
 
-def test_criterion6_symbols_tab_matches_math_toolbar_for_key_tokens():
+def test_criterion6_functional_tab_buttons_insert_the_expected_token():
     win = _make_window()
     sheet = win.sheet
-    for label in ("π", "√", "d/dx", ":="):
+    for label in ("π", "√", "d/dx", ":=", "α", "xₙ", "Ω"):
         sheet.clear_sheet()
         expected_token = next(tok for _cat, lab, tok, _tip in MATH_TOKENS if lab == label)
         btn = win.side_panel.symbol_buttons[label]
@@ -245,7 +235,7 @@ def test_criterion6_symbols_tab_matches_math_toolbar_for_key_tokens():
 def test_criterion7_outline_and_data_tabs_are_placeholder_only():
     win = _make_window()
     tabs = win.side_panel.tabs
-    for index, name in ((1, "Outline"), (2, "Data")):
+    for index, name in ((5, "Outline"), (6, "Data")):
         assert tabs.tabText(index) == name
         widget = tabs.widget(index)
         labels = widget.findChildren(QLabel)

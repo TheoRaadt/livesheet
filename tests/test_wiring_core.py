@@ -333,3 +333,49 @@ def test_component_result_defaults():
     r = ComponentResult("ok")
     assert r.error == ""
     assert r.outputs == {}
+
+
+# ===========================================================================
+# Known issue 38: format_output() must not crash on a Matrix-valued output. Reusing the same
+# per-cell measure()/format_number() + MAX_SHOWN convention as Engine._numeric_matrix (see
+# evaluator.py), just without the unit_text/env conversion step (format_output has no GUI/env
+# context).
+# ===========================================================================
+
+def test_format_output_small_matrix_same_units():
+    import sympy as sp
+    from livesheet.engine.units import UNITS
+
+    m = sp.Matrix([[1 * UNITS["m"], 2 * UNITS["m"]], [3 * UNITS["m"], 4 * UNITS["m"]]])
+    assert format_output(m) == "[1, 2; 3, 4] m"
+
+
+def test_format_output_small_matrix_dimensionless():
+    import sympy as sp
+
+    m = sp.Matrix([[1, 2], [3, 4]])
+    assert format_output(m) == "[1, 2; 3, 4]"
+
+
+def test_format_output_matrix_mixed_units_formats_each_cell():
+    import sympy as sp
+    from livesheet.engine.units import UNITS
+
+    m = sp.Matrix([[1 * UNITS["m"], 2 * UNITS["s"]], [3 * UNITS["m"], 4 * UNITS["s"]]])
+    assert format_output(m) == "[1 m, 2 s; 3 m, 4 s]"
+
+
+def test_format_output_matrix_larger_than_max_shown_is_placeholder():
+    import sympy as sp
+
+    m = sp.Matrix.zeros(11, 11)
+    assert format_output(m) == "[11x11 matrix]"
+
+
+def test_format_output_value_component_with_matrix_literal(engine):
+    # Same repro the backlog item names: a plain Value component holding a matrix literal.
+    specs = [ComponentSpec("V1", "value", {"expr": "[1,2;3,4]"})]
+    results = evaluate(specs, [], engine)
+    v1 = results["V1"]
+    assert v1.status == "ok"
+    assert format_output(v1.outputs["value"]) == "[1, 2; 3, 4]"
