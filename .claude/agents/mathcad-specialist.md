@@ -2,7 +2,7 @@
 name: mathcad-specialist
 description: Domain expert on the worksheet/engineering-calculation style of Mathcad. Use to write behavioural specs for units, solve blocks, matrices, ranges, plots and print-quality documents. Writes specs only, never code.
 tools: Read, Glob, Grep, Write, WebFetch, WebSearch, SendMessage, ListAgents
-model: sonnet
+model: haiku
 skills:
   - mathcad-concepts
   - ip-cleanroom
