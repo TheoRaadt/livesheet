@@ -211,7 +211,7 @@ def test_criterion5_side_panel_dock_tabs_and_default_dock_side():
     tabs = win.side_panel.tabs
     assert tabs.objectName() == "side-panel-tabs"
     assert [tabs.tabText(i) for i in range(tabs.count())] == \
-        ["Elements", "Algebra", "Calculus", "Statistics", "Optimization", "Outline", "Data"]
+        ["Elements", "Algebra", "Calculus", "Statistics", "Optimization", "Mechanical", "Electrical", "Chemical", "Outline", "Data"]
     side_panel_action = dock.toggleViewAction()
     assert side_panel_action.text() == "Side Panel"
     assert side_panel_action.isChecked()   # checked by default on first launch
@@ -235,7 +235,7 @@ def test_criterion6_functional_tab_buttons_insert_the_expected_token():
 def test_criterion7_outline_and_data_tabs_are_placeholder_only():
     win = _make_window()
     tabs = win.side_panel.tabs
-    for index, name in ((5, "Outline"), (6, "Data")):
+    for index, name in ((8, "Outline"), (9, "Data")):
         assert tabs.tabText(index) == name
         widget = tabs.widget(index)
         labels = widget.findChildren(QLabel)

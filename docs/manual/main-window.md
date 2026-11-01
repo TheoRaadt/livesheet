@@ -18,9 +18,11 @@ instead, described below, so there is exactly one place to find each one.
 
 ## The side panel
 
-**View > Side Panel** shows or hides a dockable panel on the left edge of the window, with seven
+**View > Side Panel** shows or hides a dockable panel on the left edge of the window, with ten
 tabs, in this order: **Elements**, **Algebra**, **Calculus**, **Statistics**, **Optimization**,
-**Outline**, **Data**. Clicking any entry in the three tabs below inserts it at the cursor in the
+**Mechanical**, **Electrical**, **Chemical**, **Outline**, **Data**. The Mechanical, Electrical and
+Chemical tabs hold ready-made engineering formulas; see [Formula tabs](formula-tabs.md). Clicking
+any entry in the three tabs below inserts it at the cursor in the
 math region you're editing (or creating, if nothing is being edited yet) — the same thing happens
 whether you click the button or use one of the keyboard shortcuts described further down.
 

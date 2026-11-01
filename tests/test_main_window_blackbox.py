@@ -161,7 +161,7 @@ def test_criterion5_side_panel_visible_by_default_docked_left_seven_tabs_in_orde
     assert win.dockWidgetArea(dock) == Qt.DockWidgetArea.LeftDockWidgetArea
     tabs = win.findChild(type(win.side_panel.tabs), "side-panel-tabs")
     assert [tabs.tabText(i) for i in range(tabs.count())] == \
-        ["Elements", "Algebra", "Calculus", "Statistics", "Optimization", "Outline", "Data"]
+        ["Elements", "Algebra", "Calculus", "Statistics", "Optimization", "Mechanical", "Electrical", "Chemical", "Outline", "Data"]
     _close(win)
 
 
@@ -183,8 +183,8 @@ def test_criterion6_functional_tab_buttons_insert_the_expected_token_spec011():
 def test_criterion7_outline_and_data_tabs_hold_exactly_one_distinct_label_each():
     win = _win()
     tabs = win.side_panel.tabs
-    outline_widget = tabs.widget(5)
-    data_widget = tabs.widget(6)
+    outline_widget = tabs.widget(8)
+    data_widget = tabs.widget(9)
     assert [type(w) for w in outline_widget.findChildren(QPushButton)] == []
     assert [type(w) for w in data_widget.findChildren(QPushButton)] == []
     outline_labels = outline_widget.findChildren(QLabel)

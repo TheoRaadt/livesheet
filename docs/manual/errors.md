@@ -161,6 +161,23 @@ tooltip), or in the "Add Component" dialog. See [CAD profile import (DXF)](cad-p
 | `Loop winding does not match the outer/hole convention (outer counter-clockwise, inner clockwise); check this profile's winding direction.` | More than one closed loop was found, but either more than one is wound counter-clockwise, or the single largest loop is wound clockwise. | Make sure the outer boundary is wound counter-clockwise and every hole is wound clockwise. |
 | `A hole loop extends outside the outer profile's boundary.` | A correctly clockwise-wound hole loop's bounding box isn't entirely inside the outer loop's bounding box. | Move the hole fully inside the outer boundary. |
 
+## Undefined names and bare units
+
+These appear on the line itself. See [Formula tabs](formula-tabs.md), section "Unit names on their
+own".
+
+| Message | Cause | Fix |
+|---|---|---|
+| `<name> is not defined` (e.g. `F is not defined`) | The expression has no digit and consists only of unit names you have not defined yourself (`F/A`, `F =`, `V*A =`, `sigma := F/A`). LiveSheet takes this to be a formula whose variables you forgot. The name shown is the first one. The message is also shown for a line that depends on such a line (for example `W is not defined`). | Define the name before the formula (`F := 10 N`), or, if you meant the unit, write a number before it (`5 F`). |
+| `<names> are not defined` (e.g. `Ac, P are not defined`; `Is, R are not defined`) | A formula, such as one inserted from a formula tab, uses several names that are not defined. The names are listed in alphabetical order. | Define each listed name above the formula, or rename it to one you defined. |
+| `<name> is not defined` for a unit alias (e.g. `u := m/s` gives `m is not defined`, then `u is not defined` wherever `u` is used) | A definition whose right side is only unit names. The alias idiom is no longer accepted. | Include a number: `u := 1 m/s`. |
+| `<name> is not defined` for a bare conversion (e.g. `m = mm`) | A conversion written with no quantity in front. | Write a quantity: `1 m = mm` (gives `= 1000 mm`). |
+| `g is not defined` / unexpected result with `g` | `g` is standard gravity, not grams. A bare `g =` or `x := g` is rejected, and `28.97 g/mol` is a gravity-per-mole, not a molar mass. | Use `gm` for grams (`28.97 gm/mol`). |
+
+Not caught, by design: `m^2` on its own, `P/A` when only `P` is defined, expressions containing a
+digit (`F^2/A`), and unit names inside function calls. These give a number built from the unit
+values instead of an error, so define your variables first.
+
 ## Pages and page breaks
 
 This message appears in the status bar at the bottom left of the window (not on a region). See

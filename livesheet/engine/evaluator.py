@@ -368,6 +368,8 @@ class Engine:
             if st.kind == "empty":
                 return RegionResult("empty")
             if st.kind in ("define", "global"):
+                if not st.params:
+                    _check_bare_units(st.expr, env)
                 value = self._define(st, env)
                 out = ""
                 if st.show:
@@ -383,6 +385,7 @@ class Engine:
                 n = len(data.traces)
                 return RegionResult("ok", f"plot {n} traces, {len(data.traces[0].x)} points", plot=data)
             if st.kind == "evaluate":
+                _check_bare_units(st.expr, env)
                 value = self.parse(st.expr, env)
                 return RegionResult("ok", "= " + self._numeric(value, st.unit, env))
             if st.kind == "symbolic":
@@ -655,6 +658,25 @@ class Engine:
 
 def _is_global(st: Statement) -> bool:
     return st.kind == "global" or (st.kind == "range" and st.is_global)
+
+
+def _check_bare_units(expr: str, env: dict) -> None:
+    """Report a unit-named identifier as undefined when nothing marks it as a unit.
+
+    A name such as ``F`` or ``A`` resolves to a unit when the user has not defined it. That is only
+    meant when the expression also carries a number or another user name (``5 N``, ``w*m``). An
+    expression made solely of untouched unit names (``F/A``) is almost certainly a formula whose
+    variables were never defined, so the first such name is reported as not defined.
+    """
+    if re.search(r"\d", expr):
+        return
+    names = _IDENT_FIND_RE.findall(expr)
+    if not names:
+        return
+    for name in names:
+        if name not in UNITS or env.get(name) is not UNITS[name]:
+            return
+    raise StatementError(f"{names[0]} is not defined")
 
 
 def _check_defined(value) -> None:

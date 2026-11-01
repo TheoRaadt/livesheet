@@ -218,3 +218,27 @@
 - Manager IP review of revision 2: PASS (ISO 216 and generic hard page break concept only). Numeric criteria A4, A6, B1, B4, B5 re-derived by hand against PAGE_HEIGHT=1220: all correct.
 - Phase A (order flip, pagination module, file format v4, wiring) approved for implementation now. Phase B (marker, reflow, PDF) approved too but dispatched after phase A is accepted.
 - Open questions 1-6 in the spec use the specialist's defaults until Theo says otherwise; Q2 (no undo for reflow) and Q5 (0.4% PDF shrink) are the ones worth asking before phase B.
+
+## 2026-11-01 IP review of specs 019 (chemical) and 020 (electrical): PASS, with numeric corrections
+- IP: both pass (public-domain physics, generic button-list mechanism from spec 011, no vendor material).
+- Numerics re-run with Engine().evaluate() against every worked example. 020: all correct. Note criterion 7: with neither Is nor R defined the real message is "Is, R are not defined" (plural form), not '"Is" is not defined'; tests must not match the singular literally.
+- 019 corrections (spec text wrong, engine behaviour is right): criterion 4 bare `Q_sens =` prints `= 1.2558×10⁶ J`; `Q_sens = kJ` prints `= 1255.8 kJ`. Criterion 6 bare `Q_rate =` prints `= 400000 W`; `Q_rate = kW` prints `= 400 kW`. Criteria 3 (99768 Pa), 5 (100000), 7 (0.3), UnitError case ("Units do not match") are correct. Tests use the explicit-unit forms.
+- Final merged tab order (Theo's standing M8 sequencing, STATUS.md): Elements, Algebra, Calculus, Statistics, Optimization, Mechanical, Electrical, Chemical, Outline, Data. Specs 018+019+020 go to ONE developer task.
+
+## 2026-11-01 IP review of spec 017 (statistics S1/S2/S3): PASS (IP only)
+- Sources are generic statistics terminology and formulas; scipy.stats is an approved BSD dependency; function names are LiveSheet's own. No vendor material.
+- NOT yet done: numeric verification of the worked examples against the engine, and Theo's answers to the 8 open questions in the spec (incl. scipy.stats/numpy.random as backend). Do both before any developer dispatch. Not dispatched now (Theo: no new items).
+
+## 2026-11-01 Spec 017 open question 1 answered by Theo: yes
+- mode tie-break = smallest tied value; two-sample t-test = Welch only (no pooled option for now).
+- Q2 yes: variance/stdev = sample (n-1); population_variance/population_stdev = n divisor.
+- Q3 yes: quantile = linear interpolation at rank p*(n-1), no method option for now.
+- Q4 yes: distribution functions reject units in S1; unit support decided later (additive).
+- Q5 yes: sampling functions require an explicit seed.
+- Q6: module layout left to the developer.
+- Q7 yes: scipy.stats / numpy.random allowed as backend.
+- Q8 ok: sample/expected/claim/level/verdict keywords accepted. All 8 spec 017 questions answered; remaining gate before dispatch: numeric verification of its worked examples.
+
+## 2026-11-01 Bare-unit check review (review 022): Theo keeps the check
+- Formula tabs 018/019/020: tester PASS. _check_bare_units: tester found unit aliases (`u := m/s`, `dist := m`), conversion idioms (`m = mm`), `g =`, `z := [N m]` now error, because `F/A` and `m/s` are indistinguishable. Theo decided: keep the check, aliases break. Gaps (m^2, P/A, digit-containing expressions) stay open on purpose.
+- Manual must document: the limitation, the `g` = standard gravity trap (grams are `gm`), and the misleading message wording.

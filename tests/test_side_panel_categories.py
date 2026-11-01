@@ -158,9 +158,9 @@ def test_criterion6_statistics_and_optimization_tabs_are_placeholder_only():
 def test_criterion7_outline_and_data_unchanged_now_sixth_and_seventh():
     win = _win()
     tabs = win.side_panel.tabs
-    assert tabs.tabText(5) == "Outline" and tabs.tabText(6) == "Data"
-    outline_label = tabs.widget(5).findChild(QLabel)
-    data_label = tabs.widget(6).findChild(QLabel)
+    assert tabs.tabText(8) == "Outline" and tabs.tabText(9) == "Data"   # moved by specs 018-020
+    outline_label = tabs.widget(8).findChild(QLabel)
+    data_label = tabs.widget(9).findChild(QLabel)
     assert outline_label.text() == OUTLINE_PLACEHOLDER
     assert data_label.text() == DATA_PLACEHOLDER
     _close(win)

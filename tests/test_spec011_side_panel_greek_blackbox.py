@@ -101,7 +101,8 @@ def _button_by_label(tabs: QTabWidget, index: int, label: str) -> QPushButton:
 # Hand-transcribed expected data, from the spec text, not the implementation.
 # ---------------------------------------------------------------------------
 
-EXPECTED_TAB_ORDER = ("Elements", "Algebra", "Calculus", "Statistics", "Optimization", "Outline", "Data")
+EXPECTED_TAB_ORDER = ("Elements", "Algebra", "Calculus", "Statistics", "Optimization", "Mechanical",
+                      "Electrical", "Chemical", "Outline", "Data")   # specs 018-020 added 3
 
 # Criterion 3: the 7 carried-over Statements/Constants entries.
 EXPECTED_STATEMENTS_CONSTANTS = [
@@ -182,8 +183,8 @@ def test_criterion1_standard_toolbar_present_and_independent():
 def test_criterion2_seven_tabs_in_order():
     win = _make_window()
     tabs = _tab_widget(win)
-    assert tabs.count() == 7
-    assert tuple(tabs.tabText(i) for i in range(7)) == EXPECTED_TAB_ORDER
+    assert tabs.count() == 10
+    assert tuple(tabs.tabText(i) for i in range(10)) == EXPECTED_TAB_ORDER
     _close(win)
 
 
@@ -402,9 +403,9 @@ def test_criterion6_clicking_placeholder_never_creates_or_changes_a_region(tab_n
 def test_criterion7_outline_and_data_are_sixth_and_seventh_and_still_placeholder_only():
     win = _make_window()
     tabs = _tab_widget(win)
-    assert tabs.tabText(5) == "Outline"
-    assert tabs.tabText(6) == "Data"
-    for idx in (5, 6):
+    assert tabs.tabText(8) == "Outline"
+    assert tabs.tabText(9) == "Data"
+    for idx in (8, 9):
         widget = tabs.widget(idx)
         assert widget.findChildren(QPushButton) == []
         assert len(widget.findChildren(QLabel)) == 1

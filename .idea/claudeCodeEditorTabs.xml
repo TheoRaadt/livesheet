@@ -1,20 +1,26 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <project version="4">
   <component name="ClaudeCodeEditorTabs">
-    <option name="activeSessionId" value="aa865597-4963-4b07-830f-923f954fd1d5" />
+    <option name="activeSessionId" value="cafe2251-97f5-413b-aa1a-32797624047d" />
     <option name="openSessionIds">
       <list>
-        <option value="aa865597-4963-4b07-830f-923f954fd1d5" />
+        <option value="7d989921-9894-432f-bfa0-10a773b1a98e" />
+        <option value="af1a15f2-a9e9-4fc5-836f-000462dc14ee" />
+        <option value="cafe2251-97f5-413b-aa1a-32797624047d" />
       </list>
     </option>
     <option name="sessionPaths">
       <map>
-        <entry key="aa865597-4963-4b07-830f-923f954fd1d5" value="/sessions/b81f0f92-a860-4b07-8a3b-e1997fec718d" />
+        <entry key="7d989921-9894-432f-bfa0-10a773b1a98e" value="/sessions/b81f0f92-a860-4b07-8a3b-e1997fec718d" />
+        <entry key="af1a15f2-a9e9-4fc5-836f-000462dc14ee" value="/sessions/new" />
+        <entry key="cafe2251-97f5-413b-aa1a-32797624047d" value="/sessions/b81f0f92-a860-4b07-8a3b-e1997fec718d" />
       </map>
     </option>
     <option name="sessionTitles">
       <map>
-        <entry key="aa865597-4963-4b07-830f-923f954fd1d5" value="Sheet reading order and A4 page breaks" />
+        <entry key="7d989921-9894-432f-bfa0-10a773b1a98e" value="Sheet reading order and A4 page breaks" />
+        <entry key="af1a15f2-a9e9-4fc5-836f-000462dc14ee" value="Claude Code" />
+        <entry key="cafe2251-97f5-413b-aa1a-32797624047d" value="Sheet reading order and A4 page breaks" />
       </map>
     </option>
   </component>

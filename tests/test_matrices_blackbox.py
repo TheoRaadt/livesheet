@@ -247,9 +247,10 @@ def test_definition_of_matrix_prints_nothing_and_defines():
     assert r[0].status == "ok" and r[0].output == ""
 
 
-def test_matrix_named_A_before_definition_is_the_unit_ampere():
-    # `A` is a unit until it is defined: documents the name clash with the spec's example name.
-    assert out("A =") == "= 1 A"
+def test_matrix_named_A_before_definition_is_not_defined():
+    # Bare `A` with nothing defined is reported as not defined (Theo's decision 2026-11-01),
+    # not silently read as the unit ampere.
+    assert err("A =") == "A is not defined"
     assert out(A, "A =") == "= [1, 2; 3, 4]"
 
 
