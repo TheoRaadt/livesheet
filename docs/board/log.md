@@ -136,3 +136,4 @@ Nothing committed this session. Full suite last independently confirmed green at
 2026-11-01 manager: Theo answered spec 017 Q1 yes (recorded in decisions.md).
 - 2026-11-01 documenter: specs 018/019/020 + bare-unit check (review 022). Added docs/manual/formula-tabs.md (tabs, insert, SI-only, renaming, explicit-unit display forms, M = N*m note, unit-name limitations, g vs gm); new errors.md group "Undefined names and bare units" (5 rows); README.md index line + side-panel tab count; main-window.md tab list updated to ten tabs.
 2026-11-01 manager: end of day. STATUS.md/backlog.md updated; mathcad-specialist set to haiku; spec 022 (wrapping tabs) written, unreviewed.
+2026-11-01 gui-specialist -> manager: spec 022 window-wide wrapping tab strip + horizontal button band ready (docs/board/specs/022-side-panel-wrapping-tabs.md); 8 open questions; GUI-only, no engine/format change. Manager IP review pending (generic toolkit chrome, expected pass).

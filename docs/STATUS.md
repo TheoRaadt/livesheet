@@ -25,7 +25,7 @@ Only the two vendor PDFs in docs/ are untracked on purpose (ip-cleanroom rule 7)
 2. **Crash report from Theo**: app closes when switching a tab when run via PyCharm's Run button;
    fine from the terminal. Ask for the Run-window text and the tab; check PyCharm env vars
    (QT_QPA_PLATFORM must be empty) and interpreter (~/livesheet-venv). Backlog 44.
-3. **Spec 022 (wrapping full-window tab strip)**: spec written by gui-specialist, manager IP review
+3. **Spec 022 (wrapping full-window tab strip)**: spec FINAL (window-wide strip + button band, side-panel dock retired, 8 open questions incl. Outline/Data placement, row stretch, band height) written by gui-specialist, manager IP review
    and answering its open questions come next; Theo wants the tab strip across the whole app window
    (under the menu bar), all 10 tabs visible, wrapping to more rows when narrow. Not built.
 4. **Spec 017 statistics**: verify its worked examples against the engine, then dispatch S1 when
