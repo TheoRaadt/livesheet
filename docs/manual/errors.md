@@ -178,6 +178,35 @@ Not caught, by design: `m^2` on its own, `P/A` when only `P` is defined, express
 digit (`F^2/A`), and unit names inside function calls. These give a number built from the unit
 values instead of an error, so define your variables first.
 
+## Statistics
+
+These appear on the line that uses the function. `<f>` stands for the function's own name (for
+example `mean`, `normal_pdf`). See [Statistics](statistics.md).
+
+| Message | Cause | Fix |
+|---|---|---|
+| `<f>() needs a vector` (e.g. `mean() needs a vector`) | The list argument is a matrix with more than one row and more than one column. | Pass a single column or single row (or one number). |
+| `<f>() needs a scalar` | A distribution function got a vector or matrix where one number is expected. | Pass a single number. |
+| `<f>() needs real numbers` | An entry or argument isn't a real number (for example complex). | Use real numbers only. |
+| `<f>() needs at least 2 values` (e.g. `variance() needs at least 2 values`; also `stdev`, `covariance`, `correlation`) | The list has fewer than 2 values. | Supply at least 2 values, or use `population_variance`/`population_stdev`, which accept 1. |
+| `p must be between 0 and 1` | `quantile`, `uniform_quantile`, or the `p` of a binomial distribution is outside 0 to 1. | Use a value from 0 to 1 inclusive. |
+| `q must be between 0 and 1` | The `q` of `binomial_quantile` is outside 0 to 1. | Use a value from 0 to 1 inclusive. |
+| `q must be at least 0 and less than 1` | The `q` of `poisson_quantile` is below 0 or is 1 or more. | Use a value from 0 up to, but not including, 1. |
+| `p must be strictly between 0 and 1` | `normal_quantile` was given exactly 0 or 1, or a value outside. | Use a value greater than 0 and less than 1. |
+| `<f>() is undefined when a vector is constant` (e.g. `correlation() is undefined when a vector is constant`; also `covariance`) | All entries of one of the two lists are equal. | Use data that varies. |
+| `Vectors must have the same length (<m> and <n>)` (e.g. `(2 and 3)`) | The two lists given to `covariance` or `correlation` differ in length. | Make both lists the same length. |
+| `Units do not match` | A list has entries with different kinds of unit, or a display unit you asked for doesn't fit the result. | Use one kind of unit throughout, or a matching display unit. |
+| `<name> is not defined` | A list entry or argument uses a name not defined earlier on the sheet. | Define it above, or fix the typo. |
+| `<f>() does not accept a unit in this version` (e.g. `normal_pdf() does not accept a unit in this version`) | A distribution or sampling function, or the `p` of `quantile`, was given a value with a unit. | Pass plain numbers; remove the unit (see the notes in [Statistics](statistics.md)). |
+| `sigma must be positive` | The `sigma` of a normal function is zero or negative. | Use a positive spread. |
+| `a must be less than b` | A uniform function was given bounds with `a` not below `b`. | Put the lower bound first and make it smaller. |
+| `lambda_ must be positive` | The rate of a Poisson function is zero or negative. | Use a rate above 0. |
+| `k must be a non-negative integer` | The `k` of a binomial or Poisson function is negative or not a whole number. | Use a whole number of 0 or more. |
+| `n_trials must be a non-negative integer` | `n_trials` of a binomial function is negative or not a whole number. | Use a whole number of 0 or more. |
+| `n must be a positive integer` | The `n` (number of draws) of a `..._sample` function is zero, negative or not a whole number. | Use a whole number of 1 or more. |
+| `n is too large (max 10000)` | More than 10000 draws were requested. | Ask for 10000 or fewer. |
+| `seed must be a non-negative integer` | The `seed` of a `..._sample` function is negative or not a whole number. | Use a whole number of 0 or more. |
+
 ## Pages and page breaks
 
 This message appears in the status bar at the bottom left of the window (not on a region). See

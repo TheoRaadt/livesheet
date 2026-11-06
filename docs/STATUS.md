@@ -1,4 +1,8 @@
-# LiveSheet status (2026-11-01, end of day)
+# LiveSheet status (2026-11-06)
+
+Update 2026-11-06: spec 022 (wrapping tab strip + button band) is DONE: implemented, tester PASS (review 022-wrapping-tab-strip-review), D1 fixed, manual updated, committed `b71a0de`. Suite: 2126 passed, 8 xfailed. Open item 3 below is closed; Outline/Data placement deferred to a follow-up spec. Real-window Mac check still outstanding (items 1-2 need Theo).
+
+# (2026-11-01 snapshot)
 
 Commits this session: `4b14919` (spec 021 page breaks + evaluation order, plus all earlier accepted
 work), `c230a01` (formula tabs 018/019/020, bare-unit check, manual). Not pushed. Last full suite:

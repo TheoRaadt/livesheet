@@ -22,6 +22,7 @@ from .plotting import PlotData, build_plot
 from .formatting import format_expr, format_number, format_value
 from . import matrices, odesolver, solver, truss
 from .matrices import MATRIX_BUILTINS, rewrite_brackets, wrap
+from .statistics import STATS_BUILTINS
 from .syntax import Statement, StatementError, parse_statement
 from .units import BASE_UNIT_BY_DIM, UNITS, Measured, UnitError, dims_to_text, measure
 
@@ -78,6 +79,7 @@ def _builtins() -> dict:
         if callable(fn) and name not in _UNWRAPPED:
             g[name] = _scalar_only(name, fn)
     g.update(MATRIX_BUILTINS)
+    g.update(STATS_BUILTINS)
     return g
 
 

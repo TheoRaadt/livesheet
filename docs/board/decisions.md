@@ -145,7 +145,7 @@
 - Accepted the one disclosed judgement call without escalating to Theo: the independent variable's dimension is inferred only from an `over` line (dimensionless by default otherwise), not from a model's other dimensioned equation constants -- low-stakes, sufficient for both reported repros, flagged by the developer for a future session rather than silently assumed settled.
 - Spec 010 (ODE solving, phases A+B, plus the D1 fix) is now fully done: implemented, independently reviewed, defect fixed and independently re-verified. Dispatching documenter for its manual page next.
 
-## Decided 2026-10-30 (manager, spec 013 implementation)
+## Decided 2026-10-30 (spec 013 implementation)
 - Verified independently (fresh `QT_QPA_PLATFORM=offscreen pytest -q` run, after `pip install -e ".[dev]"` to pick up the new `ezdxf` dependency in my own venv -- the developer's own venv instance had already installed it, mine hadn't, matching the project's own documented "concurrent agents, separate venvs" hazard, not a real bug): 1408 passed, 2 xfailed, 0 failed, matches the developer's report exactly (1378 baseline + 30 new).
 - Spot-checked the one disclosed judgement call myself: a clockwise-wound single loop's Ixx/Iyy/Ixy/J literally sign-flip under the spec's own formula (not a spec typo -- a real, linear/odd-in-cross-products consequence), which would crash rx/ry's sqrt(). The developer's fix (reverse the vertex list up front when the raw signed area is negative, inside `section_properties()`, no formula changed) is correct and matches the CCW case bit-for-bit -- verified myself by computing both windings of the worked-example triangle directly: identical area/Ixx/Iyy/rx/ry either way. Accepted, no Theo query needed (a straightforward numerical-correctness fix, not a design choice).
 - Noted the developer's one disclosed deviation from the spec's literal test-plan wording (no actual `QFileDialog` mock precedent exists anywhere in tests/ to follow, as the spec assumed; used the existing `QInputDialog.getInt` static-method-patch precedent instead) -- accepted, sensible substitution.
@@ -158,7 +158,7 @@
 - Real-window manual pass on Theo's Mac remains outstanding for spec 013 (no computer-use tooling available to this tester session either) -- carried forward, not blocking.
 - Spec 013 stays accepted for its 11 numbered criteria; the sqrt-guard fix is a small developer follow-up, not a re-review of the whole spec.
 
-## Decided 2026-10-30 (manager, spec 013 sqrt-guard fix)
+## Decided 2026-10-30 (spec 013 sqrt-guard fix)
 - Verified independently: called `section_properties()` directly on the review's self-intersecting repro -- no crash, finite (if meaningless, as the spec itself expects for this known limitation) area/Ixx/Iyy/rx/ry. Isolated run of `tests/test_cadprofile.py tests/test_cadprofile_blackbox.py tests/test_wiring_cadprofile.py`: 58 passed, 0 failed.
 - The 8 currently-failing `tests/test_truss.py` cases reported alongside this fix belong to the concurrently in-progress spec 015 (truss FEM) developer session, not this fix -- expected, not evaluated yet (that work isn't done).
 - Spec 013 (DXF profile import, phase 1) is now fully done: implemented, independently reviewed, defect fixed and re-verified. Dispatching documenter for its manual page once spec 014 (which builds directly on this module) has also shipped, so the manual page can cover both DXF phases together rather than needing a near-immediate rewrite -- holding, not forgetting.
@@ -177,7 +177,7 @@
 - Real-window manual pass on Theo's Mac remains outstanding for spec 015 (no computer-use tooling available to this tester session either) -- carried forward, not blocking.
 - Spec 015 stays accepted for its 22 numbered criteria; the guard-scope fix is a small developer follow-up, not a re-review of the whole spec.
 
-## Decided 2026-10-30 (manager, spec 015 D1 fix)
+## Decided 2026-10-30 (spec 015 D1 fix)
 - The developer agent was stopped mid-tool-call (Theo's usage limit) right after finishing this fix and running its own isolated test pass, before it could send a final handoff report. Verified independently anyway, directly from the code and a fresh test run, since the fix was in fact complete: `livesheet/engine/syntax.py`'s `_parse_model` now keeps the `_STATEMENT_OPS` check unconditional for every keyword and only skips the `_split_eval` bare-`=` check for `support` specifically. Confirmed `parse_statement("vary := 5 in q").kind == "define"` and `parse_statement("support := 5 in q").kind == "define"` (both correct now) and `parse_statement("support 1 fix x = 5 mm in bracket").kind == "model_support"` (legitimate support syntax still works). `tests/test_truss.py`+`tests/test_truss_blackbox.py` in isolation: 132 passed, 0 failed.
 - Spec 015 (FEM phase F1, 2D pin-jointed truss) is now fully done: implemented, independently reviewed, D1 fixed and re-verified. Manual page not yet dispatched (session stopped here, see STATUS.md).
 
@@ -257,3 +257,22 @@
 ## 2026-11-03 Spec 022 open questions answered by Theo: accept all recommendations
 - Q1 yes (Math panel = scrolled-out tabs). Q2 band under window-wide strip, side dock retired. Q3 defer Outline/Data placement. Q4 justified tabs. Q5 keep "View > Side Panel". Q6 no further ribbon behaviour. Q7 band clamp 4 rows / 25% window height.
 - Spec 022 approved for the developer.
+
+## 2026-11-06 Spec 017 numeric verification (S1 descriptive statistics and distributions, plus S2/S3 worked numbers): corrections applied, Python re-run still pending
+- Method: no Python execution tool was available to the verifying session (Bash not among its tools), so every worked number was re-derived by hand from closed forms and exact arithmetic (Welch and chi-square p-values via closed forms; t with df=4 and df=8 via the even-df closed/series forms; chi-square df=3 via 2Q(√x)+√(2x/π)e^(−x/2); normal/Poisson constants from standard values). NOT a substitute for the Python cross-check: a Bash-capable run of the same values against NumPy/SciPy is still required before developer dispatch (see "Pending" below).
+- Corrections made in docs/board/specs/017-statistics-core.md (all in place):
+  1. S1 crit 2: `stdev(v) = 2.1381` -> `2.138090` (√(32/7); the old value's relative error ≈4.7e-6 breaks the stated 1e-6 tolerance). `variance` written as `4.571429`.
+  2. S1 crit 13: `normal_quantile(0.975,0,1) = 1.95996` -> `1.959964` (relative error ≈2e-6, breaks tolerance); `normal_pdf(0,0,1)` written as `0.3989423` (margin).
+  3. S1 crit 16: `poisson_cdf(2,3) = 0.42319` -> `0.423190` (relative error ≈1.9e-6, breaks tolerance); `poisson_quantile` input changed to `0.423190` to match; `poisson_pmf(2,3)` written as `0.2240418` (margin).
+  4. S1 crit 4 and 6 (display forms, not numeric values): a bare `=` on mm- or N·m-valued results prints base SI (`0.005 m`, and `J` for N·m), as established by the 2026-11-01 spec-018 verification; criteria now use the explicit display-unit forms (`= mm`, `= N*m`) and note that the printed form still needs engine confirmation. The numeric values `5 mm`, `1.5` are unchanged and hand-verified.
+  5. S1 crit 15: added a note that `binomial_quantile(0.5,5,0.5)=2` sits on an exact tie (cdf(2)=0.5), so the implementation must compare exactly or with a tolerance, not raw floats.
+  6. S2 syntax example (gauge): `p = 0.0180`, `reject` was WRONG for the same data as S2 crit 1; corrected to `p = 0.2302`, `fail to reject`.
+  7. S2 crit 1: p-value range "between 0.2 and 0.23" was wrong (exact p = 1 − 4/(3√3) = 0.230200, just above 0.23); now stated as `0.230200`.
+  8. S2 crit 2 (`s1b_pvalue` = 0.115100), crit 3 (gauge p 0.230200), crit 4 (`ab_pvalue` = 0.346594 with closed form), crit 5 (`fit_pvalue` = 1.70e-4) now carry hand-verified values (were unstated).
+  9. S2 crit 7: `level 0.0001` with p = 1.70e-4 gives `fail to reject`, not `reject` as written. Rewritten: `level 0.0001` -> fail to reject; `level 0.001` -> reject.
+  10. S3 crit 2 inline derivation: `2.5/1.66667 = 1.5` was a garbled intermediate; corrected to sample covariance 4.5/3 = 1.5 divided by sample variance 5/3, giving slope 0.9. Final values `[0.9; 0.9]` and `predict(...,4) = 4.5` were already correct.
+- Verified correct as written (no change needed): S1 crit 1, 3, 5, 7, 14; S1 crit 2 `population_*`/`mean`/`median`/`mode`; S1 crit 13 `normal_cdf(0)`, `normal_cdf(1)`; S1 crit 15 (`0.3125`, `0.5`, `0`); S1 crit 16 `poisson_quantile`; S2 Welch statistic −1, df 8; S2 chi-square statistic 20, df 3; S2 crit 6 rescaling; S3 crit 1, 3, 4, 5 (exact fits and units).
+- Open questions 1-8 marked answered (2026-11-01, Theo) in the spec's Open questions section.
+- Status line in the spec: S1 "approved for developer phase S1, CONDITIONAL on the Python re-run below"; S2/S3 not dispatched.
+- Pending before developer dispatch (owner: manager or a Bash-capable agent): run these exact checks in ~/livesheet-venv/bin/python and confirm they match the spec's stated values to the stated tolerance: `mode`/`median`/`quantile` on [2,4,4,4,5,5,7,9]; `stdev` = 2.138090; `normal_pdf(0,0,1)`=0.3989423, `normal_cdf(1)`=0.841345, `normal_quantile(0.975)`=1.959964; `poisson_pmf(2,3)`=0.2240418, `poisson_cdf(2,3)`=0.423190; `binomial_quantile(0.5,5,0.5)`=2 (check exact tie handling); Welch p (t=-1, df=8, two-sided) = 0.346594; one-sample two-sided p (t=√2, df=4) = 0.230200; chi-square p (x=20, df=3) = 1.70e-4. Then flip the S1 status line to plain "approved".
+- S1 crit 4/6 printed forms still need engine confirmation (tester), not a numeric question.

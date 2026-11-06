@@ -34,5 +34,8 @@ It grows as features ship; a page only appears here once a feature is finished a
   engineering formulas (47 buttons) from the tab strip, filling in and renaming their names,
   showing results in the unit you want, and why an undefined unit-named variable such as `F` or `A`
   now gives "is not defined" (including the `g` = standard gravity trap).
+- [Statistics](statistics.md) - mean, median, mode, sample and population variance/standard
+  deviation, quantiles, covariance and correlation of a list of measurements; normal, uniform,
+  binomial and Poisson distribution functions; and seeded random samples.
 - [Error messages](errors.md) — every message LiveSheet can show you while using the features
   above, grouped by area, with what causes it and how to fix it.
