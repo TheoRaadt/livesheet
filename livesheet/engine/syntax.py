@@ -307,6 +307,9 @@ def _parse_model(text: str) -> Statement | None:
         if not rest:
             raise StatementError(f'"{keyword}" needs an expression')
         return Statement(_TRUSS_EXPR_KEYWORDS[keyword], model=name, expr=rest)
+    stats = _parse_stats_keyword(keyword, body, rest, name)
+    if stats is not None:
+        return stats
     if keyword == "support":
         return _parse_support(rest, name)
     if keyword == "load":
@@ -358,6 +361,25 @@ def _parse_model(text: str) -> Statement | None:
     if relations is None:
         raise StatementError('A relation is required before "in ' + name + '"')
     return Statement("model_require", model=name, relations=relations)
+
+
+_STATS_EXPR_KEYWORDS = {"sample": "model_sample", "expected": "model_expected",
+                        "claim": "model_claim"}
+
+
+def _parse_stats_keyword(keyword: str, body: str, rest: str, name: str) -> Statement | None:
+    """Hypothesis-test lines (spec 017 S2): sample / expected / claim / level / verdict."""
+    if keyword == "verdict" and body == "verdict":
+        return Statement("model_result", model=name, goal="hypothesis_test")
+    if keyword == "verdict" and body[7:8] in (" ", "[", "("):
+        raise StatementError("verdict takes no expression")
+    if keyword not in (*_STATS_EXPR_KEYWORDS, "level"):
+        return None
+    if body[len(keyword):len(keyword) + 1] not in (" ", "[", "("):
+        return None  # e.g. ``sample2 in g`` is not this keyword
+    if keyword == "level":
+        return Statement("model_setting", model=name, name="level", expr=rest)
+    return Statement(_STATS_EXPR_KEYWORDS[keyword], model=name, expr=rest)
 
 
 _SUPPORT_SPLIT_RE = re.compile(r"^(.+?)\s+fix\b(.*)$", re.DOTALL)

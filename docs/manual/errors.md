@@ -207,6 +207,42 @@ example `mean`, `normal_pdf`). See [Statistics](statistics.md).
 | `n is too large (max 10000)` | More than 10000 draws were requested. | Ask for 10000 or fewer. |
 | `seed must be a non-negative integer` | The `seed` of a `..._sample` function is negative or not a whole number. | Use a whole number of 0 or more. |
 
+### Hypothesis tests
+
+These appear on the `sample`/`expected`/`claim`/`level`/`verdict` line itself. `<name>` is the
+test's `in <name>` tag. See [Hypothesis tests](statistics.md#hypothesis-tests). Some are shown at
+the line that is wrong, as soon as you type it; the rest appear on the `verdict` line.
+
+| Message | Cause | Fix |
+|---|---|---|
+| `No sample declared for hypothesis test "<name>"` | `verdict` ran but no `sample` line above it has that tag. | Add a `sample <list> in <name>` line above `verdict`, or fix the tag's spelling. |
+| `hypothesis test "<name>" has <k> sample lines, expected 1 or 2` | Three or more `sample` lines share one tag. | Keep one `sample` line (one-sample or chi-square) or two (Welch). |
+| `claim "<claim>" needs one sample line, found <k>` / `claim "<claim>" needs two sample lines, found <k>` (e.g. `claim "mean1 == mean2" needs two sample lines, found 1`) | The number of `sample` lines doesn't suit the claim. | One `sample` line for `mean`/`fits` claims; two for `mean1 ... mean2`. |
+| `No claim declared for hypothesis test "<name>"` | There is no `claim` line for that tag. | Add a `claim ... in <name>` line. |
+| `Claim already declared for hypothesis test "<name>"` | Two `claim` lines share one tag. | Keep exactly one. |
+| `Level already declared for hypothesis test "<name>"` | Two `level` lines share one tag. | Keep at most one. |
+| `Expected values already declared for hypothesis test "<name>"` | Two `expected` lines share one tag. | Keep at most one. |
+| `Use "claim mean == <value>" ("<" or ">" for one-sided), "claim mean1 == mean2", or "claim fits"` | The `claim` text isn't one of the accepted forms (for example `claim mean <= 7`, `claim mean1 == 7`, or a misspelling). | Use one of the three forms; `==`, `<` and `>` are the only comparisons. |
+| `claim "fits" needs an expected line` | `claim fits` without an `expected` line. | Add `expected <list> in <name>`. |
+| `claim "<claim>" does not use an expected line` | An `expected` line is present, but the claim is a `mean` claim. | Remove the `expected` line, or change the claim to `claim fits`. |
+| `expected has <m> values but sample has <n>` (e.g. `expected has 3 values but sample has 4`) | The `expected` list and the `sample` list differ in length. | Make both lists the same length. |
+| `expected values must be positive` | An `expected` value is zero or negative. | Use values above 0 (even if the matching observed count is 0). |
+| `expected values must be dimensionless` | An `expected` value has a unit. | Remove the unit. |
+| `expected must be a vector` / `sample must be a vector` | The `expected` or `sample` expression is a matrix with several rows and columns. | Give a single column or row (or one number). |
+| `level must be a number between 0 and 1` | The `level` is a value with a unit, or isn't a plain number. | Write a plain number such as `0.05`. |
+| `level must be between 0 and 1` | The `level` is 0, 1 or outside that range. | Use a value greater than 0 and less than 1. |
+| `claimed mean must be a single value` | The value after `claim mean ==` (or `<`, `>`) is a vector or matrix. | Give one number. |
+| `claimed mean must be a real number` | The claimed value isn't a real number (for example complex). | Give a real number. |
+| `Units do not match` | The claimed value's unit differs from the sample's (for example `claim mean == 12` for a sample in mm), or the two Welch samples have different kinds of unit. | Use the same kind of unit everywhere (or none). |
+| `Units do not match: sample counts must be dimensionless` | A chi-square `sample` has a unit. | Use plain counts. |
+| `"<name>" needs at least 2 values per sample` | A t-test sample, or a chi-square sample, has fewer than 2 values. | Supply at least 2 values in each sample. |
+| `"<name>" sample has zero variance; the t statistic is undefined` (Welch: `"<name>" samples have zero variance; ...`) | All values in the sample (for Welch, in both samples) are equal, so there is no spread to measure. | Use data that varies. |
+| `"<name>" sample counts must not all be zero` | Every chi-square sample count is 0. | Supply real counts. |
+| `Result too large` | The numbers are so large that the test cannot be computed. | Use smaller values or a different unit. |
+| `verdict takes no expression` | Text was written between `verdict` and `in <name>`. | Write `verdict in <name>` and nothing else. |
+| `No result region for hypothesis test "<name>" below this region` | A `sample`/`expected`/`claim`/`level` line is tagged `in <name>`, but no `verdict` line for that tag is below it. | Add a `verdict in <name>` line below every line of that test. |
+| `<name> is not defined` | A `sample`, `expected`, `claim` value or `level` uses a name not defined earlier on the sheet. | Define it above, or fix the typo. |
+
 ## Pages and page breaks
 
 This message appears in the status bar at the bottom left of the window (not on a region). See

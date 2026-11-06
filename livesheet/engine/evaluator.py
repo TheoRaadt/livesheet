@@ -20,7 +20,7 @@ import re
 
 from .plotting import PlotData, build_plot
 from .formatting import format_expr, format_number, format_value
-from . import matrices, odesolver, solver, truss
+from . import matrices, odesolver, solver, stats_tests, truss
 from .matrices import MATRIX_BUILTINS, rewrite_brackets, wrap
 from .statistics import STATS_BUILTINS
 from .syntax import Statement, StatementError, parse_statement
@@ -218,6 +218,7 @@ class Engine:
         last_result: dict[str, int] = {}     # model name -> position of its last result region
         ode_models: set[str] = set()         # model name -> ODE system (own "no result" wording)
         truss_models: set[str] = set()       # model name -> truss model (own "no result" wording)
+        stats_models: set[str] = set()       # model name -> hypothesis test (own wording)
         for pos, (key, _) in enumerate(regions):
             st = statements.get(key)
             if st is not None and st.kind == "model_result":
@@ -228,6 +229,10 @@ class Engine:
                                               "model_truss_area", "model_truss_modulus",
                                               "model_support", "model_load"):
                 truss_models.add(st.model)
+            if st is not None and (st.kind in ("model_sample", "model_expected", "model_claim")
+                                   or (st.kind == "model_setting" and st.name == "level")
+                                   or (st.kind == "model_result" and st.goal == "hypothesis_test")):
+                stats_models.add(st.model)
         earlier: dict[str, list[Statement]] = {}
         for pos, (key, _) in enumerate(regions):
             st = statements.get(key)
@@ -235,20 +240,26 @@ class Engine:
                 continue
             if st.kind.startswith("model_"):
                 results[key] = self._run_model(st, pos, key, env, earlier, last_result, broken_models,
-                                               results, ode_models, truss_models)
+                                               results, ode_models, truss_models, stats_models)
                 continue
             results[key] = self._run(st, env)
         return results
 
     def _run_model(self, st: Statement, pos: int, key, env: dict, earlier: dict, last_result: dict,
-                   broken: dict, results: dict, ode_models: set[str], truss_models: set[str]) -> RegionResult:
+                   broken: dict, results: dict, ode_models: set[str], truss_models: set[str],
+                   stats_models: set[str]) -> RegionResult:
         try:
             if st.kind != "model_result":
                 if last_result.get(st.model, -1) <= pos:
                     kind_word = ("ODE system" if st.model in ode_models
-                                else "truss model" if st.model in truss_models else "model")
+                                else "truss model" if st.model in truss_models
+                                else "hypothesis test" if st.model in stats_models else "model")
                     raise StatementError(f'No result region for {kind_word} "{st.model}" below this region')
+                prior = [m for _, m in earlier.get(st.model, [])]
                 earlier.setdefault(st.model, []).append((key, st))
+                if st.model in stats_models:
+                    stats_tests.check_line(self, st, env, prior)
+                    return RegionResult("ok")
                 if st.kind == "model_require":
                     try:
                         for rel in st.relations:
@@ -269,6 +280,8 @@ class Engine:
                 return self._run_ode(st, [m for _, m in members], env)
             if st.goal == "truss":
                 return self._run_truss(st, [m for _, m in members], env)
+            if st.goal == "hypothesis_test":
+                return self._run_hypothesis_test(st, [m for _, m in members], env)
             if not members:
                 raise StatementError(f'No unknowns declared for model "{st.model}"')
             keys, regions = [k for k, _ in members], [m for _, m in members]
@@ -322,6 +335,18 @@ class Engine:
         model = truss.build(self, st.model, regions, env)
         outcome = truss.solve(model)
         return self._truss_result(st.model, outcome, env)
+
+    def _run_hypothesis_test(self, st: Statement, regions: list[Statement], env: dict) -> RegionResult:
+        model = stats_tests.build(self, st.model, regions, env)
+        outcome = stats_tests.solve(model)
+        name = st.model
+        env[f"{name}_statistic"] = sp.Float(outcome.statistic)
+        env[f"{name}_df"] = sp.Float(outcome.df)
+        env[f"{name}_pvalue"] = sp.Float(outcome.pvalue)
+        decision = "reject H0" if outcome.reject else "fail to reject H0"
+        p_text = format_number(sp.Float(outcome.pvalue), self.significant)
+        a_text = format_number(sp.Float(outcome.alpha), self.significant)
+        return RegionResult("ok", f"⇒ {decision} (p = {p_text}, alpha = {a_text})")
 
     def _truss_result(self, name: str, outcome: "truss.Outcome", env: dict) -> RegionResult:
         env[f"{name}_displacement"] = outcome.displacement

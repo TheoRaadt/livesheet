@@ -36,6 +36,7 @@ It grows as features ship; a page only appears here once a feature is finished a
   now gives "is not defined" (including the `g` = standard gravity trap).
 - [Statistics](statistics.md) - mean, median, mode, sample and population variance/standard
   deviation, quantiles, covariance and correlation of a list of measurements; normal, uniform,
-  binomial and Poisson distribution functions; and seeded random samples.
+  binomial and Poisson distribution functions; seeded random samples; and hypothesis tests
+  (one-sample t, Welch two-sample t, chi-square fit) with `sample`/`claim`/`level`/`verdict` lines.
 - [Error messages](errors.md) — every message LiveSheet can show you while using the features
   above, grouped by area, with what causes it and how to fix it.

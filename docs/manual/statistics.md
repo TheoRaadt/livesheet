@@ -1,8 +1,9 @@
 # Statistics
 
 LiveSheet can summarise a list of measurements (mean, spread, percentiles, how two lists move
-together) and evaluate four standard probability distributions: normal, uniform, binomial and
-Poisson. Everything here is an ordinary function you type into a math region, the same way you
+together), evaluate four standard probability distributions (normal, uniform, binomial and
+Poisson) and run hypothesis tests (see [Hypothesis tests](#hypothesis-tests) at the end of this
+page). Except for the tests, everything here is an ordinary function you type into a math region, the same way you
 already type `sin(x)` or `sqrt(x)`. There is nothing to insert and no dialog.
 
 The **Statistics** tab in the tab strip has no buttons yet. Type the functions by hand.
@@ -219,7 +220,146 @@ stdev(x) =                     (close to 1)
 - **Your own name wins.** If you define your own variable or function called `mean`, `mode` and so
   on, yours is used in place of the built-in one for the rest of the sheet.
 
-Hypothesis tests (including Welch's two-sample t-test) and curve fitting are not part of LiveSheet
-yet.
+## Hypothesis tests
+
+A hypothesis test answers "is the difference I see likely to be real, or could it be chance?".
+LiveSheet offers three tests:
+
+- **One-sample t-test**: does the average of one list differ from a value you have in mind?
+- **Two-sample (Welch) t-test**: do the averages of two lists differ? Welch's version does not
+  assume the two lists are equally spread. It is the only two-sample test offered.
+- **Chi-square fit test**: do observed counts match the counts you expected?
+
+A test is written as several separate lines that belong together through a shared name at the end,
+`in <name>`, in the same way as the other tagged blocks (such as the
+[differential equation](odes.md) and [truss](truss.md) lines). The lines can sit anywhere on the
+sheet, but the `verdict` line that runs the test only uses lines for that name that are above it
+(reading left to right, then top to bottom). Nothing is calculated until `verdict` is reached.
+
+| Line | Meaning |
+|---|---|
+| `sample <list> in <name>` | The measurements. One line for a one-sample or chi-square test, exactly two for a two-sample test. |
+| `expected <list> in <name>` | Expected counts, only for the chi-square test. |
+| `claim <text> in <name>` | What you are testing (the forms are below). Exactly one line. |
+| `level <number> in <name>` | The significance level. Optional, at most one line. |
+| `verdict in <name>` | Runs the test and shows the decision. Nothing may be written between `verdict` and `in`. |
+
+Each `<list>` is a vector (a single column or row, or a single number), for example
+`[12, 14, 11, 15, 13]`, or the name of a vector you defined earlier.
+
+### The claim
+
+The claim states the starting assumption (the "null hypothesis") that the test tries to refute.
+
+| You write | Test | Needs |
+|---|---|---|
+| `claim mean == <value>` | One-sample t, two-sided: the average equals `<value>`. | One `sample` line, no `expected`. |
+| `claim mean < <value>` | One-sample t, one-sided, using the lower tail. | Same. |
+| `claim mean > <value>` | One-sample t, one-sided, using the upper tail. | Same. |
+| `claim mean1 == mean2` (or `<`, `>`) | Welch two-sample t. `mean1` is the first `sample` line, `mean2` the second, in reading order. | Two `sample` lines, no `expected`. |
+| `claim fits` | Chi-square fit of the sample counts to the expected counts. | One `sample` line and one `expected` line. |
+
+`mean`, `mean1`, `mean2` and `fits` are fixed words, not names of your variables. Anything else
+(for example `claim mean <= 7`) is refused with a message that lists the three forms.
+
+### Significance level and the verdict
+
+The level is the chance of a false alarm you are willing to accept. If you leave out the `level`
+line it is 0.05. It must be greater than 0 and less than 1 (for example `level 0.01 in fit`).
+
+The test produces a p-value: roughly, how likely a difference at least this big would be if the
+claim were true. The verdict is
+
+- **reject H0** if the p-value is at or below the level (the data speaks against the claim);
+- **fail to reject H0** if it is above the level (the data does not rule the claim out).
+
+"Fail to reject" is deliberate wording: a test can never prove a claim true, only fail to find
+evidence against it.
+
+The `verdict` line shows, for example, `⇒ fail to reject H0 (p = 0.2302, alpha = 0.05)`. The
+numbers are printed the same way as any other result.
+
+### Results you can reuse
+
+When `verdict` succeeds it defines three plain numbers (no unit) named after your test:
+`<name>_statistic` (the t or chi-square value), `<name>_df` (the degrees of freedom) and
+`<name>_pvalue`. Type them on a math region like any variable, for example `gauge_pvalue =`. They
+exist only after a successful `verdict`; if it shows an error they are not defined.
+
+### Worked example: one measurement list against a target
+
+Five readings should average 7:
+
+```
+sample [8, 7, 6, 9, 10] in s1
+claim mean == 7 in s1
+verdict in s1                    ⇒ fail to reject H0 (p = 0.2302, alpha = 0.05)
+s1_statistic =                   = 1.41421
+s1_df =                          = 4
+s1_pvalue =                      = 0.2302
+```
+
+The readings average 8, which is above 7, but with only five readings that is not convincing
+(p = 0.2302 is well above 0.05), so you cannot rule out that the true average is 7. For a
+one-sided claim, write `claim mean > 7 in s1b` instead; it asks whether the average is above 7.
+
+With units, give the claimed value the same kind of unit as the sample:
+
+```
+sample [12, 14, 11, 15, 13] mm in gauge
+claim mean == 12 mm in gauge
+verdict in gauge
+```
+
+### Worked example: two lists
+
+```
+sample [1, 2, 3, 4, 5] in ab
+sample [2, 3, 4, 5, 6] in ab
+claim mean1 == mean2 in ab
+verdict in ab                    ⇒ fail to reject H0 (p = 0.346594, alpha = 0.05)
+ab_statistic =                   = -1
+ab_df =                          = 8
+```
+
+The two lists must have the same kind of unit (or none), and each needs at least 2 values.
+
+### Worked example: do the counts match what you expected?
+
+```
+sample [10, 20, 30, 40] in fit
+expected [25, 25, 25, 25] in fit
+claim fits in fit
+verdict in fit
+fit_statistic =                  = 20
+fit_df =                         = 3
+fit_pvalue =                     = 0.000169742
+```
+
+The p-value is about 0.00017, so at the default level of 0.05 the verdict is `reject H0`: the
+counts do not fit an even split. The level changes the decision when it sits on either side of
+the p-value. With `level 0.0001 in fit` the verdict is `fail to reject H0`; with
+`level 0.001 in fit` it is `reject H0`.
+
+Rules for the chi-square test:
+
+- The `sample` counts must have no unit, at least 2 values, and not all be zero.
+- The `expected` values must all be greater than zero, have no unit, and there must be as many as
+  sample values. They may be proportions rather than counts: if they do not add up to the same
+  total as the sample, they are scaled to it first, so `[1, 1, 1, 1]` gives the same result as
+  `[25, 25, 25, 25]` here.
+- The degrees of freedom are the number of values minus 1.
+- This test only looks at one tail (a large mismatch); there is no `<` or `>` form.
+
+### Good to know
+
+- Both t-tests need at least 2 values in each sample, and a sample whose values are all equal has
+  no spread, so the t value cannot be computed and you get an error.
+- The words `sample`, `expected`, `claim` and `level` only count as test lines when followed by a
+  space, `[` or `(`. A variable called `sample`, `level`, or `sample2` is therefore fine: for
+  example `sample2 in g` is not treated as a test line.
+- Each line is also checked where it stands, so a bad `claim`, `level` or `expected` line shows
+  its own error right away, before `verdict`.
+- Curve fitting (regression, the third phase of the statistics work) is not part of LiveSheet yet.
 
 Messages you may meet are listed under "Statistics" in [Error messages](errors.md).
