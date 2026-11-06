@@ -1,282 +1,306 @@
-# 022 Side-panel tab strip: full-width, always-visible, wrapping rows
+# 022 Window-wide wrapping tab strip with a horizontal button band (replaces the narrow side-panel tabs)
+
+Revision note: first draft (2026-11-01) kept the strip inside the 120-320 px side panel. Theo then
+clarified (relayed by the coordinator) that the strip must instead span the WHOLE application window
+width, directly under the menu bar and above the canvas. This revision replaces the earlier design;
+the file name is kept for board continuity.
 
 Source inspiration (concept only, nothing copied):
 - General, long-established toolkit convention that a tab bar with more tabs than fit on one line
-  can either scroll/elide (what Qt's default horizontal tab bar does) or wrap onto several rows
-  (the classic "multi-row tab bar" found in many desktop toolkits and in dialogs with many pages).
-  No specific product's tab chrome was consulted; the user-facing behaviour is defined by Theo's
-  own request plus the project's gui-concepts checklist (".claude/skills/gui-concepts/SKILL.md":
-  "full keyboard navigation", "clear focus/selection states", "screen-reader-friendly labels on
-  custom widgets", "light and dark variants from the same token set").
+  can either scroll/elide (Qt's stock horizontal tab bar) or wrap onto several rows (the classic
+  multi-row tab bar found in many desktop toolkits and dialogs). Wrapping is a generic widget
+  behaviour, not a feature of one product.
 - General, public usability heuristics: visibility of system state (every option visible at once,
-  no hidden items behind scroll arrows), recognition over recall, and "do not truncate labels".
-  Heuristics writing only; no URL-specific text is reproduced.
-- Own prior specs: `docs/board/specs/007-main-window.md` (single dockable tabbed side panel) and
-  `docs/board/specs/011-side-panel-category-tabs.md` (tab list, `side-panel-tabs`, Open question 5
-  explicitly deferred narrow-width tab presentation to "Qt's default overflow" -- this spec now
-  replaces that deferral), and the Mechanical/Electrical/Chemical tab specs 018-020, which grew the
-  strip from 7 to 10 tabs.
-- No Mathcad, Mathematica, Maple, MATLAB or other vendor software, help file, screenshot or
-  non-public document was read for this spec.
+  nothing hidden behind scroll arrows), recognition over recall, do not truncate labels.
+  Heuristics writing only; no text reproduced.
+- Project's own `.claude/skills/gui-concepts/SKILL.md`: "clear primary canvas vs. chrome", "full
+  keyboard navigation", "clear focus/selection states", "screen-reader-friendly labels on custom
+  widgets", "light and dark variants from the same token set".
+- Own prior specs: 007-main-window.md (dockable tabbed side panel), 011-side-panel-category-tabs.md
+  (tab list; its Open question 5 deferred narrow-width tab presentation to Qt defaults, which this
+  spec now replaces), 018-020 (Mechanical/Electrical/Chemical tabs, growing the strip to 10 tabs).
+- No Mathcad, Mathematica, Maple, MATLAB or other vendor software, help, screenshot or non-public
+  document was read. Theo's phrase "like a ribbon" is taken only as "a tab strip across the window
+  whose tabs continue on further rows"; no ribbon features are specified (see IP check).
 
-Scope note: this spec changes only how the side panel's tab *strip* is laid out and operated. It does
-not change the tab names, their order, their content, the token data, shortcuts, the dock's
-open/closed persistence, or any engine/document behaviour.
+Scope note: changes WHERE the tab strip and the selected tab's token buttons live and how the strip
+lays out. Does not change tab names, order, token data (MATH_TOKENS, TAB_CATEGORIES, labels, tokens,
+tooltips), shortcuts, engine, or the .lsheet format.
 
-Size: one phase, about 1-2 days (GUI-only; one new small custom widget plus wiring in
-`livesheet/gui/sidepanel.py`; no engine, no document-format change).
+Size: one phase, about 2-3 days (GUI-only: new strip widget, new flow-layout band, main-window
+re-parenting, test updates for the dock removal).
 
 ---
 
 ## User story
-As a LiveSheet user, I want the side panel's tab strip to use the panel's whole width and to show
-every tab, always, with its full name -- so that I never have to scroll a tab strip to find a tab
-and never see a clipped label such as "Mech...". When the panel is too narrow to fit all tabs on one
-line, I want the tabs to continue on extra rows below (like a multi-row tab bar), pushing the tab's
-content area down, rather than hiding some tabs. I noticed that the first tabs (Elements, Algebra,
-Calculus) seemed to disappear in a narrow panel (I "missed the Math panel"); they must always be
-visible and reachable.
+As a LiveSheet user, I want the category tabs (Elements, Algebra, Calculus, Statistics,
+Optimization, Mechanical, Electrical, Chemical, Outline, Data) across the full width of the window,
+right under the menu bar, with every tab always visible and fully labelled. When the window is too
+narrow for one line, I want the tabs to continue on further rows below instead of hiding behind
+scroll arrows or clipped labels. I never want Elements, Algebra or Calculus to disappear because a
+strip was scrolled. The buttons of the selected tab should be right there under the strip, using the
+window's width, so I do not have to squeeze them into a 120 px column.
 
-## Diagnosis (why the first tabs disappear today)
-The strip is Qt's stock `QTabWidget` tab bar. With 10 tabs in a 120-320 px dock it cannot show them
-all, so it (a) elides long labels and (b) shows small scroll arrows and scrolls the strip, which can
-leave the leftmost tabs (Elements, Algebra, Calculus) scrolled out of view. The Math toolbar that
-used to hold these items was removed by spec 011, so the only way to reach them is the tab strip.
-This spec treats that scrolling as the cause of Theo's remark (see Open question 1).
+## Diagnosis
+The stock tab bar in the 120-320 px side panel elides labels and scrolls, hiding the leftmost tabs
+(Elements, Algebra, Calculus). The Math toolbar that once held them was removed by spec 011, so they
+became unreachable until the user found the scroll arrows. Moving the strip to the window's full
+width, with wrapping rather than scrolling, removes the cause (see Open question 1 on "Math panel").
+
+## Decisions taken in this spec (with justification)
+1. **Where the selected tab's buttons appear: a horizontal "button band" directly under the strip,
+   spanning the window width** (chosen), instead of keeping the existing narrow side-panel content
+   below the strip. Why: the strip is now window-wide, so its content belongs with it; tokens are
+   reached constantly while typing, so keeping them adjacent to the canvas shortens eye/mouse
+   travel; a wide band holds 40 Greek/constant buttons in 1-3 rows instead of a 40-row scrolling
+   column; and it frees the canvas from a permanent left column. Alternative (keep content in the
+   side panel dock, strip window-wide above) is recorded as Open question 2.
+2. **The side-panel dock is retired as the tab holder.** All 10 tabs (including Outline and Data)
+   live in the strip and their pages show in the band. Why: Theo asked for all 10 tabs visible in the
+   window-wide strip; splitting 8 in the strip and 2 in a dock would break the unchanged 10-tab
+   model that existing tests and the saved-tab setting rely on. Outline and Data are placeholders
+   today (one muted message), which fit in the band. When they get real content (tree, dataset list)
+   they will want a tall panel: see Open question 3.
 
 ## Behaviour (own words)
 
-### Layout of the strip
-- The strip sits at the top of the side panel, spans the panel's full inner width (no side margins
-  beyond a small uniform inset equal to the panel's own content margin), and is followed
-  immediately below by the content area (the existing per-tab page).
-- It is a **wrapping flow of tab buttons**: tabs are placed left to right in the fixed tab order; when
-  the next tab's full-width button no longer fits on the current row, it starts a new row below.
-  This is a simple greedy fill, in order. Tab order is never rearranged to pack rows better.
-- Every tab button always shows its **complete label** (no ellipsis, no clipping, no abbreviation).
-  The label font and size are the application's normal UI font (resizable with OS text size).
-- **No scroll arrows, no overflow menu, no hidden tab** in any panel width the dock allows.
-- **Rows are justified**: after rows are formed, each row's buttons are widened equally so that the
-  row exactly fills the strip width (the last row is justified too, so the strip reads as a tidy
-  block rather than a ragged one). Spacing between buttons is a fixed small gap (suggest 2 px) and
-  between rows a fixed small gap (suggest 2 px).
-- **Rows never reorder when a tab is selected.** The active tab keeps its position; the strip does
-  not rotate the active tab's row next to the content (a behaviour of some older multi-row bars
-  that makes tab positions jump). Stable positions support muscle memory.
-- Strip height = rows x button height + gaps. The strip reports a height-for-width size, so when
-  the available width changes, the row count and strip height change and the content area below
-  gets the remaining height. The content area keeps its existing scroll area for long token lists.
-- Minimum strip width = the widest single tab button (currently "Optimization"), so a label can never
-  be clipped. The side panel's minimum width (today 120 px) must be at least that value at the
-  current UI font; if the UI font is large enough that "Optimization" needs more than 120 px, the
-  dock's minimum width grows to fit (labels win over the 120 px figure). See Open question 2 for the
-  maximum width.
+### Placement and structure (top to bottom of the window)
+menu bar, Standard toolbar (unchanged), **tab strip**, **button band**, canvas/worksheet, status bar.
+The strip and band together form one widget that spans the full window width (inner margin small and
+uniform, suggest 4 px), is not movable or floatable, and is shown/hidden by the existing
+`View > Side Panel` entry (label kept for compatibility; renaming is Open question 5). Whether it is
+implemented as a non-movable toolbar-area widget with a toolbar break or as a container above the
+canvas in the central layout is the developer's choice; it must sit between the Standard toolbar and
+the canvas at every window size.
 
-### Tab button appearance and states
-- Each tab is a flat, checkable button (exactly one checked at a time) with consistent padding and a
-  small rounded or squared border, in LiveSheet's own style. Three visible states: normal, hover,
-  and selected.
-- **Selected state** must be clearly distinguishable without relying on colour alone: it uses the
-  application's accent/highlight colour for fill or underline AND a second cue (bolder weight, or a
-  heavier border/underline). Colours come from the active palette/theme tokens, so light and dark
-  themes both work and the selected tab is legible in both. No hard-coded colours that break in
-  dark mode.
-- **Keyboard focus** is shown with a visible focus ring on the focused tab button, distinct from the
-  selected highlight (a tab can be selected without having focus, and vice versa).
-- Tooltip: none needed (label is fully visible); do not add tooltips that merely repeat the label.
+### The tab strip
+- Wrapping flow of tab buttons, left to right in the fixed tab order. When the next tab's full-width
+  button no longer fits on the current row it starts a new row below (greedy fill, in order; tabs are
+  never reordered to pack better).
+- Every tab always shows its complete label (no ellipsis, no clipping). Normal UI font.
+- No scroll arrows, no overflow menu, no hidden tab at any window width the window allows.
+- Rows are justified: after rows are formed, each row's buttons are widened equally so the row fills
+  the strip width exactly (last row too). Fixed small gaps between buttons and rows (suggest 2 px).
+  (Open question 4 covers natural-width alternative.)
+- Positions are stable: selecting a tab never moves it or rotates rows.
+- Strip height = rows x button height + gaps, via height-for-width; relayout happens on every
+  window resize event, including during drag-resizing.
+- Minimum strip width = widest single tab button ("Optimization" today); the main window's minimum
+  width is at least this plus margins, so labels are never clipped (labels win over any smaller
+  hand-set window minimum).
+- Tab button states: normal, hover, selected (exactly one). Selected state uses the theme accent plus
+  a second non-colour cue (bolder weight and/or heavier underline/border), colours taken from the
+  active palette/theme tokens so light and dark both work (check `livesheet/gui/theme.py` for
+  existing tokens; no hard-coded colours). Keyboard focus ring distinct from the selected look.
+- Interaction: click selects (clicking the current tab does nothing). Keyboard: the strip is one tab
+  stop with roving focus; Left/Right move to previous/next tab and select it; Up/Down move to the
+  horizontally closest tab on the row above/below (nothing if none); Home/End first/last; Space or
+  Enter selects a focused unselected tab; no wrap-around at ends. Standard page-stepping shortcuts
+  (Ctrl+Tab / Ctrl+Shift+Tab or platform equivalents) work where the tab model provides them.
+  Programmatic selection (restoring the saved tab at startup) never steals canvas focus; switching
+  tabs never interrupts or steals focus from a region being edited.
+- Accessibility: each button's accessible name is its label (role "tab" and selected state where
+  supported); the strip's accessible name is "Side panel categories".
 
-### Interaction
-- **Click**: a single left click on a tab button selects that tab and shows its content, as a
-  normal tab does. Clicking the already-selected tab does nothing (no flicker, no signal).
-- **Keyboard**: the strip is a single tab stop (roving focus). When it has focus:
-  Left / Right arrow move to the previous / next tab in tab order and select it immediately;
-  Up / Down arrow move to the tab on the row above / below that is horizontally closest (if there is
-  no row in that direction, nothing happens); Home / End select the first / last tab. Space or Enter
-  on a focused-but-unselected tab selects it. Selecting by keyboard follows the same path as a click.
-  Left on the first tab and Right on the last tab do nothing (no wrap-around).
-  The existing standard tab-widget shortcuts for stepping through pages (Ctrl+Tab, Ctrl+Shift+Tab,
-  and platform equivalents, where the tab widget already provides them) must keep working.
-- Switching tabs by any means must not steal focus from a math region being edited on the canvas;
-  clicking a tab button may take focus into the strip (acceptable), but programmatic changes
-  (e.g. restoring the saved tab at startup) must not.
-- **Accessibility**: each tab button exposes its label as its accessible name and a "tab" role if
-  the toolkit supports it, plus its selected state; the strip exposes an accessible name such as
-  "Side panel categories".
+### The button band (content of the selected tab)
+- Directly under the strip, full width. It shows only the selected tab's page.
+- Functional tabs: the page is a wrapping flow of the same bordered click-to-insert buttons used
+  today (same labels, tokens, tooltips; clicking still calls `insert_token(token)`), left to right,
+  wrapping to further rows at the window width. Tabs with sub-groups (Elements: Statements,
+  Constants, Greek letters; Mechanical, Electrical, Chemical groups) show each group's small grey
+  header label inline, and each group starts on a new row. Single-category tabs (Algebra,
+  Calculus) show no header, as today.
+- Placeholder tabs (Statistics, Optimization, Outline, Data): the same muted, centred, wrapped
+  one-line message as today, in the band.
+- **Band height is stable across tab switches**: it equals the tallest page's required height at the
+  current window width, clamped to a maximum (suggest 4 rows of buttons; or about 25 percent of the
+  window height if larger). A page taller than the clamp scrolls vertically inside the band (the
+  strip never scrolls). Height recomputes on window resize, not on tab selection, so the canvas does
+  not jump when switching tabs.
+- Buttons keep their natural width (not justified); long labels (e.g. "Resultant (2 forces)") are not
+  elided; a button never exceeds the band width.
 
-### Data and API compatibility (must keep working unchanged)
-Existing code and tests rely on the following; all must behave exactly as today:
-- `SidePanel.tabs` is still an object found via `findChild(QTabWidget, "side-panel-tabs")` --
-  i.e. it must remain a `QTabWidget` (or subclass) whose `objectName` is `"side-panel-tabs"`.
-- `tabs.count()`, `tabs.tabText(i)`, `tabs.widget(i)`, `tabs.indexOf(w)`, `tabs.currentIndex()`,
-  `tabs.setCurrentIndex(i)`, and the `currentChanged(int)` signal keep their meaning. Specifically,
-  `currentChanged` is emitted exactly once per actual change of the selected tab, with the new
-  index, whether the change came from a click, the keyboard, or `setCurrentIndex`; it is not
-  emitted when re-selecting the already-current tab. `MainWindow` still persists the index under
-  the `QSettings` key `"side_panel_tab"` and restores it at startup (index range 0-9).
-- Tab names and order stay exactly: Elements, Algebra, Calculus, Statistics, Optimization,
-  Mechanical, Electrical, Chemical, Outline, Data (`TAB_ORDER` unchanged). `symbol_buttons`,
-  `MATH_TOKENS`, `TAB_CATEGORIES`, `PLACEHOLDER_TABS` unchanged.
-- Adding a tab later (a future spec) only requires adding a name to the same list; the strip
-  relayouts automatically for any tab count (the wrap logic is not hard-wired to 10).
+### What happens to the side-panel dock
+- The `QDockWidget` `side-panel-dock` (left, 120-320 px) no longer exists as a dock; there is no
+  permanent left column and the canvas gains its width. Its 120/320 px width caps and dock-width
+  persistence no longer apply. A stale saved `"window_state"` naming `side-panel-dock` must load
+  without error (Qt skips unknown docks).
+- `SidePanel` stays as the name of the owning object so `win.side_panel` keeps working (it may become
+  a plain QWidget container rather than a QDockWidget). `win.side_panel.tabs` and
+  `win.side_panel.symbol_buttons` are unchanged in meaning.
 
-### Suggested structure (not mandated; developer's choice)
-Because Qt's stock `QTabWidget`/`QTabBar` on macOS does not wrap tab rows natively, the visible strip
-is a custom widget. One workable arrangement: the dock's content is a container with a vertical
-layout holding (1) the wrapping strip widget (a flow layout of checkable buttons in a button group,
-implementing height-for-width) and (2) the existing `QTabWidget`, kept as the page holder with its
-own native tab bar hidden (`tabBar().hide()`), the strip and the hidden bar kept in sync through
-`currentChanged` / `setCurrentIndex` (guarding against signal loops). This keeps `tabs.*` API, the
-`side-panel-tabs` object name and `findChild(QTabWidget, ...)` all intact. An equally acceptable
-alternative is a `QTabWidget` subclass that supplies its own strip; the acceptance criteria below
-are written against observable behaviour, not this structure. The strip should expose two small
-inspectable members for tests: a way to read the current row count, and each tab button's geometry
-(exact names are the developer's choice; objectName of the strip suggested `side-panel-tab-strip`).
+### Compatibility that must hold
+- `win.side_panel.tabs` is a `QTabWidget` (or subclass), `objectName == "side-panel-tabs"`, found by
+  `findChild(QTabWidget, "side-panel-tabs")`. It remains the model of the 10 pages: `count()`,
+  `tabText(i)`, `widget(i)`, `indexOf`, `currentIndex()`, `setCurrentIndex(i)`, and the
+  `currentChanged(int)` signal all behave as today. `currentChanged` fires exactly once per real
+  change (click, keyboard or code), never for re-selecting the current tab. Its native tab bar is
+  hidden; the strip drives it and mirrors it without signal loops. Note: the page widgets of `tabs`
+  are displayed in the band, so the `tabs` widget itself is hosted in the band area (page area of
+  the QTabWidget with hidden bar), which keeps `tabs.currentWidget()` correct.
+- Order and names unchanged: Elements, Algebra, Calculus, Statistics, Optimization, Mechanical,
+  Electrical, Chemical, Outline, Data. `MainWindow` keeps persisting the index under `QSettings`
+  `"side_panel_tab"` (0-9) and restoring it.
+- Adding a tab later needs only a new name/page; the strip re-flows for any count.
+- Existing tests that assert dock-specific facts (the `side-panel-dock` object, 120/320 px width
+  caps, dock open/close/width persistence from specs 007/011 criteria 8-9) must be updated by the
+  tester/developer to the new equivalent (strip+band visibility via `View > Side Panel`, tab-index
+  persistence); the developer lists every changed test in the handoff. Tests that only use
+  `side_panel.tabs` need no edit.
 
 ## Syntax proposal (own keywords)
-N/A. GUI chrome only. No change to `livesheet/engine/*`, the `.lsheet` format, or any keyword.
+N/A. GUI chrome only. No change to `livesheet/engine/*`, `.lsheet`, or keywords.
 
 ## Acceptance criteria
-Notation: strip width W is the width available to the strip inside the panel. Button widths depend
-on the platform UI font, so row counts below are the *expected result for the reference font* and
-the test computes them from the buttons' own `sizeHint()` widths (greedy fill with the gap above);
-the numbers in the table are approximate sanity checks, not hard-coded asserts.
+Notation: W = window content width in px. Button widths depend on the platform font, so row counts
+are computed in tests by greedy fill from the buttons' `sizeHint()` widths plus the gap; the
+approximate numbers below (10 tab labels total about 750 px of button width at the reference font)
+are sanity checks, not hard-coded asserts.
 
-1. Tab list: `tabs.count() == 10` and `[tabText(i)] == [Elements, Algebra, Calculus, Statistics,
-   Optimization, Mechanical, Electrical, Chemical, Outline, Data]` (unchanged; existing tests in
-   `test_main_window_chrome.py`, `test_side_panel_categories.py`, `test_formula_tabs_018_020.py`
-   keep passing without edits).
-2. Full labels: at every tested width, each strip button's displayed text equals its tab's
-   `tabText` exactly (no "..." and no truncation), and each button's width >= its text's
-   `sizeHint()` width (label not clipped).
-3. All visible: at every tested width, every one of the 10 buttons is visible (`isVisible()` true
-   for a shown panel) and its geometry lies fully inside the strip rectangle (left >= 0, right <= W).
-   No scroll-arrow buttons exist (`QTabBar.usesScrollButtons()` false on any native bar that is
-   still shown, or no native bar shown at all).
-4. Panel width 120 px: the widest label ("Optimization") still fits; expected about 9-10 rows
-   (roughly one tab per row, with possibly the two shortest adjacent tabs, e.g. Outline + Data,
-   sharing a row). Row count must equal the greedy-fill count computed from `sizeHint()`s, rows <= 10.
-5. Panel width 300 px: expected about 3-4 rows (the 10 labels total roughly 750 px of button width at
-   the reference font). Row count equals the greedy-fill count; first row contains Elements first.
-6. Panel width 600 px (strip tested directly, or dock allowed to reach that width, see Open
-   question 2): expected 2 rows (1 row only if the font is small enough for all 10 to fit).
-   Row count equals the greedy-fill count.
-7. Justification: at each tested width, in every row the sum of button widths plus gaps equals W
-   within 1 px (rows span the full width, last row included), and all buttons in the strip have the
-   same height.
-8. Order: reading the buttons by (row, x) always gives the 10 names in the fixed tab order; the
-   order is identical at 120, 300 and 600 px and after any resize sequence.
-9. Active highlight: exactly one button is in the selected (checked) state at any time and it is
-   the button for `tabs.currentIndex()`; after `setCurrentIndex(k)` for each k in 0..9 the selected
-   button is button k, and its rendering differs from an unselected button's in at least two ways
-   (fill/underline colour and weight/border), in both a light and a dark palette.
-10. Click switching: clicking button k (via `QTest.mouseClick` on its centre) makes
-    `tabs.currentIndex() == k`, shows page k (`tabs.currentWidget() is tabs.widget(k)`) and emits
-    `currentChanged` exactly once with k. Clicking the already-selected button emits nothing.
-11. Keyboard switching: with the strip focused and tab 0 selected, Right x2 selects tab 2
-    (Calculus), Left selects tab 1, End selects tab 9 (Data), Home selects tab 0, Right on tab 9
-    leaves 9 selected, Left on tab 0 leaves 0 selected. In a layout with at least 2 rows, Down from a
-    tab in row 1 selects a tab in row 2 whose horizontal centre is the closest to the original
-    tab's centre; Up from row 1 does nothing. Each change emits `currentChanged` once.
-    Space/Enter on a focused, unselected button selects it.
-12. Dock resize relayout: with the panel shown, resizing it from 300 px to 120 px increases the row
-    count (never decreases), resizing back to 300 px restores the earlier row count and button
-    positions exactly, and the strip's height changes accordingly; the content area's top edge sits
-    immediately below the strip's bottom edge at every width, with no overlap and no gap > 4 px.
-    Relayout happens on the resize event itself (no extra user action needed) and while the user
-    drags the dock separator.
-13. Persistence unchanged: selecting tab 8 (Outline), closing and re-creating `MainWindow` with the
-    same settings restores tab 8 as selected, and both the stack page and the strip highlight show
-    it (existing assertion in the chrome tests, indexes 2 and 8/9 still valid).
-14. Many tabs: appending an 11th and a 12th tab programmatically (`tabs.addTab(widget, "Extra")`)
-    in a test appears in the strip, in order, with no code change, and the layout stays valid
-    (extends criteria 3, 7, 8). Removing a tab removes its button and re-flows.
-15. Narrow-width robustness: at the minimum panel width, no exception, no zero-size button, and
-    switching through all 10 tabs by click still shows each page.
-16. First tabs reachable (Theo's complaint): at 120, 300 and 600 px, the Elements, Algebra and
-    Calculus buttons are visible and their centres are inside the visible strip region, and clicking
-    each shows its tab's content (Elements page has the Greek-letter buttons, Algebra has `sqrt(`,
-    Calculus has `diff(`).
-17. Theming: switching the application palette between light and dark (or re-polishing the widget)
-    updates tab colours without restart; selected and unselected states remain distinguishable in
-    both. Focus ring visible on the focused button in both.
-18. Accessibility: each button has `accessibleName()` equal to its tab label; the strip has an
-    accessible name (suggested "Side panel categories").
+1. Unchanged model: `tabs.count() == 10`; `[tabText(i)]` equals the order above; existing tests in
+   test_main_window_chrome.py, test_side_panel_categories.py, test_formula_tabs_018_020.py that use
+   only `side_panel.tabs` pass without edits.
+2. Placement: the strip's top edge is at or below the Standard toolbar's bottom edge, above the band,
+   which is above the canvas; the strip and band span W minus the uniform inner margin (left edge <=
+   margin+1, right edge >= W - margin - 1) at W = 600, 1000, 1600.
+3. Full labels: at W = 600, 1000, 1600 each strip button's text equals its tab label exactly (no
+   ellipsis) and its width >= its text's `sizeHint()` width.
+4. All visible: at those widths all 10 buttons are visible and lie fully inside the strip rectangle;
+   no scroll-arrow buttons exist (no native bar shown, or `usesScrollButtons()` false).
+5. W = 600 px: expected 2 rows (about 750 px of total button width; the number equals the greedy
+   count). Row 1 starts with Elements.
+6. W = 1000 px: expected 1 row (equals greedy count; a very large font may give 2).
+7. W = 1600 px: expected 1 row.
+8. Justification: in every row, sum of button widths plus gaps equals the strip width within 1 px
+   (including the last row); all buttons have equal height.
+9. Order: reading buttons by (row, x) gives the 10 names in tab order at every width and after any
+   resize sequence.
+10. Active highlight: exactly one button selected at any time, and it is button
+    `tabs.currentIndex()`; after `setCurrentIndex(k)` for k in 0..9 the selected button is k; its
+    rendering differs from unselected buttons in at least two ways, in light and dark palettes.
+11. Click: clicking button k makes `currentIndex() == k`, `currentWidget() is widget(k)`, the band
+    shows page k, and `currentChanged` is emitted exactly once with k; clicking the current button
+    emits nothing.
+12. Keyboard: with the strip focused and tab 0 selected: Right x2 selects tab 2 (Calculus), Left
+    selects 1, End selects 9, Home selects 0, Right on 9 and Left on 0 do nothing. In a 2-row layout
+    (W = 600) Down from a row-1 tab selects the row-2 tab with the closest horizontal centre; Up from
+    row 1 does nothing. Space/Enter on a focused unselected button selects it. One
+    `currentChanged` per change.
+13. Window resize relayout: resizing the window 1600 -> 1000 -> 600 -> 1000 -> 1600 px: row count
+    never decreases while narrowing, and returning to a width restores that width's earlier row count
+    and button positions exactly; the band's top edge is directly under the strip's bottom edge
+    (gap <= 4 px) and the canvas top is directly under the band at every width; relayout needs no
+    user action and also happens during drag-resize.
+14. Band content: with Elements selected at W = 1600 the band contains all 40 Elements buttons (7 +
+    33 Greek; `symbol_buttons` unchanged), group headers Statements/Constants/Greek letters each
+    start a new row, and clicking the alpha button inserts `alpha` (token unchanged). With
+    Mechanical selected the Statics and Strength of Materials headers appear and
+    "Resultant (2 forces)" is shown in full. Algebra shows 4 buttons without a header, Calculus 2.
+15. Placeholder tabs: Statistics, Optimization, Outline, Data show only their existing message in
+    the band and contain no `QPushButton`.
+16. Stable band height: at a fixed W, selecting each of the 10 tabs in turn leaves the band's height
+    and the canvas's top edge unchanged; changing W may change them. Band height never exceeds the
+    clamp; a page taller than the clamp has a vertical scrollbar inside the band while the strip
+    height is unaffected.
+17. First tabs reachable: at W = 600, 1000, 1600 the Elements, Algebra and Calculus buttons are
+    visible and clicking each shows its page (Elements has the alpha button, Algebra `sqrt(`,
+    Calculus `diff(`).
+18. Dock retired: `win.findChild(QDockWidget, "side-panel-dock")` is None; the canvas starts at the
+    window's left inner edge (no left column); `View > Side Panel` toggles the visibility of strip +
+    band together (hidden: neither visible, canvas moves up; shown again restores the saved tab);
+    loading a stale saved `"window_state"` that names `side-panel-dock` raises nothing.
+19. Persistence: select tab 8 (Outline), close, recreate `MainWindow` with the same settings: tab 8
+    is selected in both `tabs` and the strip highlight and the band shows its message. Out-of-range
+    saved index is clamped; never zero or two selected tabs.
+20. Many tabs: appending an 11th and 12th tab in a test appears in the strip in order and the band
+    works; removing a tab removes its button and re-flows (extends 4, 8, 9).
+21. Minimum width: the window's minimum width is >= the widest tab button + margins; at that
+    minimum, no exception, no zero-size button, every tab clickable (up to 10 rows).
+22. Theming and accessibility: switching light/dark updates strip and band without restart;
+    focus ring visible on the focused button in both; each button `accessibleName()` equals its
+    label; the strip has an accessible name.
+23. Insert behaviour unchanged: clicking any band button while a math region is being edited inserts
+    its token at the cursor, exactly as the old side panel did; switching tabs does not move focus
+    away from the edited region.
 
 ## Edge cases
-- Very large OS/UI font: buttons grow, more rows form; if the widest label exceeds the dock's
-  current minimum width, the dock's minimum width is raised to fit (labels never clipped). The
-  content area may then become short; it keeps its scroll area.
-- Very short window: the strip can take up to 10 rows at 120 px; the content area below shrinks and
-  scrolls. The strip itself never scrolls and never gets clipped by the content area (the strip is
-  allotted its height first). If the window is so short that the strip alone does not fit, the dock
-  as a whole is clipped by the window, which is acceptable.
-- Floating (undocked) side panel: same behaviour; relayout on the floating window's resize.
-- Disabled or hidden tab (a future feature): a disabled tab's button is shown disabled and not
-  selectable; a hidden tab is removed from the flow (not leaving a gap). Not exercised by any current
-  tab.
-- Selecting a tab programmatically at startup (restoring `"side_panel_tab"`) must not emit a second
-  settings write beyond the normal one and must not steal canvas focus.
-- A stored `"side_panel_tab"` index outside 0..count-1 (hand-edited settings) is clamped to the
-  valid range by existing behaviour; the strip never shows zero or two selected tabs.
-- Right-to-left layouts: the flow mirrors (first tab at the right); tab order in the logical list
-  is unchanged. Not required to be tested now.
-- Placeholder tabs (Statistics, Optimization, Outline, Data) behave exactly like functional tabs
-  for selection; their content is unchanged.
+- Very large UI font: buttons grow, more strip rows; the window minimum width rises to fit the widest
+  label. The band clamp may then force the band to scroll. The canvas keeps a reasonable minimum
+  height; if the window is too short for strip + band + canvas the band is shrunk first (clamp
+  lowers, scroll appears), never the strip.
+- Strip rows plus band can take a sizeable share of a short window; accepted, user can hide it via
+  `View > Side Panel`.
+- A page with a long group (Chemical, 5 groups, 21 buttons) at W = 600 may need several rows; it
+  scrolls inside the band if over the clamp.
+- Placeholder messages are single lines; band height for them is the same stable band height.
+- Disabled or hidden tab (future): disabled shown disabled and not selectable; hidden removed from
+  the flow with no gap. Not used today.
+- Right-to-left layouts: flow mirrors; logical order unchanged. Not tested now.
+- Narrow window plus justification: a row holding one wide tab stretches it to full width; that is
+  intended.
 
 ## IP check
-Pass. A wrapping/multi-row tab bar is generic toolkit chrome that has existed in desktop toolkits
-for decades and across many unrelated applications and dialogs; it is not tied to any
-engineering-calculation product, and no vendor's layout, icon set, colour palette or ribbon
-arrangement was consulted. The behaviours specified (greedy flow, justified rows, roving-focus
-arrow-key navigation, accent-plus-second-cue selected state) are standard accessibility/usability
-practice and Theo's own request. No on-canvas interaction technique is introduced (ip-cleanroom
-rule 6): this is ordinary dock chrome. No vendor names, text, icons, CSS/QSS, or code used. Theo's
-phrase "like a word processor ribbon" is used only as a loose description of "tabs continue on
-further rows"; this spec does not reproduce any ribbon (groups, galleries, collapsing commands) and
-defines no ribbon-like chrome. Not legal advice.
+Pass. A window-wide tab strip with wrapping rows over a band of buttons is generic desktop-toolkit
+chrome (multi-row tab bars and wrapping button flows exist across many unrelated applications,
+dialogs and toolkits). No vendor's layout, icon set, colour palette, group/gallery arrangement or
+command-collapsing behaviour was consulted or reproduced; no ribbon-specific features (contextual
+tabs, galleries, collapsing groups, minimising by double-click, quick-access bar) are specified, and
+the tab names are LiveSheet's own existing ones. Tab strip + content band is a common pattern with
+many precedents (property sheets, settings pages, tabbed toolboxes) and is not a technique tied to
+the engineering-calculation-tool category; it is ordinary dock/window chrome and introduces no
+on-canvas interaction (ip-cleanroom rule 6). Theo's "like a ribbon" wording is acknowledged; to
+stay on the safe side the spec deliberately keeps the interaction minimal and does not copy any
+ribbon's behaviours. Manager may still wish to confirm this with Theo (Open question 6). No vendor
+text, icons, CSS/QSS or code used. Not legal advice.
 
 ## Fits current architecture?
-- `livesheet/gui/sidepanel.py` only: replace the visible stock tab bar of `SidePanel.tabs` (current
-  lines: `QTabWidget` created, tabs added in `TAB_ORDER`, `self.setWidget(self.tabs)`) with the
-  custom wrapping strip + page holder described above. `TAB_ORDER`, `TAB_CATEGORIES`,
-  `MATH_TOKENS`, `PLACEHOLDER_TABS`, `_build_functional_tab`, `symbol_buttons` untouched.
-- `livesheet/gui/main_window.py`: no change required (it already uses `side_panel.tabs`
-  `setCurrentIndex` / `currentChanged` and `QSettings["side_panel_tab"]`). The `SidePanel` dock's
-  `setMaximumWidth(320)` may need review (Open question 2).
-- Theming: use the existing palette/theme tokens in `livesheet/gui/theme.py` rather than hard-coded
-  colours (developer to check for existing accent token names).
-- No engine, no document, no dependency changes.
-- Tests: new `tests/test_side_panel_wrapping_tabs.py` covering criteria 1-18 under
-  `QT_QPA_PLATFORM=offscreen` (row counts computed from `sizeHint()`s so they are font-independent;
-  widths 120/300/600 set via `resize()` on the shown panel or the strip). Existing tab tests must
-  pass unchanged. The tester also does a real-window pass on Theo's Mac: open the side panel, drag
-  the dock separator between its minimum and maximum width and confirm tabs wrap and unwrap smoothly,
-  that no label is truncated and no scroll arrows appear, that Elements/Algebra/Calculus are always
-  visible, click and arrow-key through all 10 tabs, check light and dark appearance, and relaunch to
-  confirm the saved tab is restored.
+- `livesheet/gui/sidepanel.py`: `SidePanel` stops being a `QDockWidget` (or remains the owner object
+  of `tabs`/`symbol_buttons`); `_build_functional_tab` changes from a vertical button list in a
+  `QScrollArea` to a wrapping flow (flow layout with inline group headers) in a scroll area bound to
+  the band; add the strip widget (flow of checkable buttons, height-for-width, roving focus). Data
+  (`MATH_TOKENS`, `TAB_CATEGORIES`, `TAB_ORDER`, `PLACEHOLDER_TABS`) untouched.
+- `livesheet/gui/main_window.py`: replace `addDockWidget(LeftDockWidgetArea, side_panel)` and the
+  `toggleViewAction` hookup with placing the strip+band between the Standard toolbar and the canvas
+  and a `View > Side Panel` checkable action driving its visibility (persisted in settings);
+  keep `side_panel.tabs.setCurrentIndex(settings["side_panel_tab"])` and the `currentChanged`
+  persistence. Remove any code referencing the dock's width caps.
+- `livesheet/gui/theme.py`: use existing tokens; add tokens for tab selected/hover only if needed.
+- No engine, document or dependency changes.
+- Tests: new `tests/test_wrapping_tab_strip.py` for criteria 2-23 under `QT_QPA_PLATFORM=offscreen`
+  (row counts from `sizeHint()` greedy fill; window widths via `resize()` on a shown `MainWindow`);
+  update dock-specific assertions in existing tests (list them in the handoff). Tester also does a
+  real-window pass on Theo's Mac: drag-resize the window across ~600 to ~1600 px and watch the
+  strip wrap/unwrap smoothly with no truncated label or scroll arrow; confirm Elements/Algebra/
+  Calculus always visible; click and arrow-key through all 10 tabs; insert a token from each
+  functional tab into a region; check that the canvas does not jump when switching tabs; light and
+  dark appearance; hide/show via `View > Side Panel`; relaunch and confirm the saved tab restored;
+  confirm an old preferences file naming `side-panel-dock` opens cleanly.
 
 ## Open questions for the manager (copy to docs/board/decisions.md if accepted)
-1. **"I miss the Math panel."** This spec treats Theo's remark as caused by the first tabs
-   (Elements, Algebra, Calculus -- the successors of the removed Math toolbar, spec 011) being
-   scrolled out of sight in a narrow panel by the stock tab strip. If instead Theo meant a *separate*
-   Math panel/toolbar (for example the removed Math toolbar, or a dedicated dock for math
-   insertions), that is a different feature and needs a new request; nothing here reintroduces a
-   Math toolbar or splits the side panel. [Recommend asking Theo to confirm after seeing this fix.]
-2. **Dock maximum width.** `SidePanel` is currently capped at 320 px (`setMaximumWidth(320)`), so a
-   600 px panel cannot occur in the real window; criterion 6 therefore tests the strip directly at
-   600 px. Should the cap be raised (for example to 600 px or removed) so users can widen the panel
-   until all tabs sit on one or two rows? [Recommend raising it to about 600 px; trivial change,
-   but a layout decision for Theo.]
-3. **Justified vs. natural-width rows.** The spec justifies every row (buttons stretch to fill the
-   width, last row too). Alternative: natural-width buttons, left-aligned, ragged right edge.
-   [Recommend justified, matching "uses the full width"; easy to change.]
-4. **Active row behaviour.** The spec keeps tab positions fixed when a tab is selected (rows never
-   rotate). Some older multi-row bars move the active row next to the content; rejected here for
-   stability. [Recommend accepting.]
-5. **Row count at 120 px.** At the narrowest width nearly every tab gets its own row (9-10 rows,
-   a tall strip eating most of the panel height). If Theo finds that too tall, a later option is to
-   lower the dock's minimum width bound upward (e.g. 160 px) or reduce button padding; not part of
-   this spec. [Flag only.]
-6. **Handoff-log append.** The specialist toolset had no append tool for the long
-   `docs/board/log.md`; the manager should add the handoff line (given in the report) if not
-   already added.
+1. **"I miss the Math panel."** Treated as caused by Elements/Algebra/Calculus (successors of the
+   removed Math toolbar, spec 011) being scrolled out of sight in the narrow tab strip. If Theo meant
+   a separate Math panel/toolbar (e.g. the old Math toolbar or its own dock), that is a different
+   feature and needs a new request; this spec reintroduces neither.
+2. **Content location.** This spec puts the selected tab's buttons in a window-wide band under the
+   strip. Alternative: keep the narrow side-panel dock for the button list and only move the strip
+   to the window-wide row (strip then drives the dock). The band is recommended (justified above);
+   the alternative would keep dock-related tests and the left column.
+3. **Outline and Data future home.** They sit in the strip and show placeholders in the band today.
+   Once they have real content (document outline tree, dataset list) they probably need a tall
+   panel: recommend then keeping those two tabs in the strip but opening their content in a
+   re-introduced left dock (or splitter) via a follow-up spec. Decide now or defer.
+4. **Justified vs. natural-width tabs.** Rows are justified to the full width (so at 1600 px each of
+   10 tabs is about 160 px wide). Alternative: natural-width, left-aligned, ragged right. Recommend
+   justified, matching "menu-wide"; trivial to change.
+5. **Menu label.** `View > Side Panel` is kept so existing tests and habits work, although the thing
+   is no longer a side panel; consider renaming to "Palette Tabs" (and the `SidePanel` class
+   likewise) in a later cleanup. Needs Theo's wording preference.
+6. **Ribbon wording / IP.** Theo's "like a ribbon" is treated as loose description only. The manager
+   may want to confirm with Theo that no further ribbon-like behaviour (groups, galleries, collapse)
+   is wanted; adding such features would need a fresh IP review.
+7. **Vertical space.** A 2-row strip plus a band of up to 4 button rows takes noticeable height at
+   narrow widths (600 px). The clamp (4 rows or 25 percent of window height) is a suggestion;
+   Theo may prefer a tighter or looser value, or a way to collapse the band.
+8. **Handoff-log append.** The specialist toolset has no append tool for the long
+   docs/board/log.md (rewriting the 138-line file risked losing content), so the manager should add
+   the line given in the report.

@@ -149,16 +149,15 @@ def test_criterion4_dragged_toolbar_to_left_edge_persists_across_restart():
 # Side panel (criteria 5-9)
 # ---------------------------------------------------------------------------
 
-def test_criterion5_side_panel_visible_by_default_docked_left_seven_tabs_in_order_spec011():
+def test_criterion5_side_panel_visible_by_default_no_dock_ten_tabs_in_order_spec011_spec022():
     """Updated for spec 011: the side panel now has 7 tabs (Elements/Algebra/Calculus/
     Statistics/Optimization/Outline/Data) instead of spec 007's original 3 (Symbols/Outline/
     Data)."""
     win = _win()
     win.show()
     QApplication.processEvents()
-    dock = win.findChild(QDockWidget, "side-panel-dock")
-    assert dock.isVisible()
-    assert win.dockWidgetArea(dock) == Qt.DockWidgetArea.LeftDockWidgetArea
+    assert win.findChild(QDockWidget, "side-panel-dock") is None   # spec 022: dock retired
+    assert win.side_panel.isVisible()
     tabs = win.findChild(type(win.side_panel.tabs), "side-panel-tabs")
     assert [tabs.tabText(i) for i in range(tabs.count())] == \
         ["Elements", "Algebra", "Calculus", "Statistics", "Optimization", "Mechanical", "Electrical", "Chemical", "Outline", "Data"]
@@ -200,16 +199,14 @@ def test_criterion7_outline_and_data_tabs_hold_exactly_one_distinct_label_each()
     _close(win)
 
 
-def test_criterion8_reopening_after_a_closed_restart_restores_prior_tab_and_width():
+def test_criterion8_reopening_after_a_closed_restart_restores_prior_tab():
     win = _win()
     win.resize(1000, 700)
     win.show()
     QApplication.processEvents()
     win.side_panel.tabs.setCurrentIndex(1)   # Algebra (post spec 011), a non-default tab
-    win.resizeDocks([win.side_panel], [250], Qt.Orientation.Horizontal)
     QApplication.processEvents()
-    width_before = win.side_panel.width()
-    win.side_panel.toggleViewAction().trigger()   # close it (simulates the dock close button)
+    win.side_panel.toggleViewAction().trigger()   # close it (View > Side Panel)
     assert not win.side_panel.isVisible()
     _close(win)
 
@@ -221,22 +218,13 @@ def test_criterion8_reopening_after_a_closed_restart_restores_prior_tab_and_widt
     win2.side_panel.toggleViewAction().trigger()   # user reopens it
     QApplication.processEvents()
     assert win2.side_panel.tabs.currentIndex() == 1
-    assert abs(win2.side_panel.width() - width_before) <= 10
     _close(win2)
 
 
-def test_criterion9_dock_width_is_clamped_to_120_320_and_canvas_keeps_400_at_window_minimum():
+def test_criterion9_canvas_keeps_400_at_window_minimum_without_dock_spec022():
     win = _win()
     win.show()
     QApplication.processEvents()
-    win.resizeDocks([win.side_panel], [5], Qt.Orientation.Horizontal)   # try far below minimum
-    QApplication.processEvents()
-    assert win.side_panel.width() >= 120
-    win.resizeDocks([win.side_panel], [5000], Qt.Orientation.Horizontal)   # try far above maximum
-    QApplication.processEvents()
-    assert win.side_panel.width() <= 320
-
-    win.resizeDocks([win.side_panel], [320], Qt.Orientation.Horizontal)
     win.resize(win.minimumSizeHint())
     QApplication.processEvents()
     assert win.view.width() >= 400

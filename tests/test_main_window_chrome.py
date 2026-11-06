@@ -201,18 +201,19 @@ def test_toolbars_are_movable_but_not_floatable():
 # Side panel (criteria 5-9)
 # ---------------------------------------------------------------------------
 
-def test_criterion5_side_panel_dock_tabs_and_default_dock_side():
+def test_criterion5_side_panel_strip_tabs_and_no_dock_spec022():
+    """Spec 022: the dock is retired; strip + band sit above the canvas, full width."""
     win = _make_window()
     win.show()
     QApplication.processEvents()
-    dock = win.findChild(QDockWidget, "side-panel-dock")
-    assert dock is not None
-    assert win.dockWidgetArea(dock) == Qt.DockWidgetArea.LeftDockWidgetArea
+    assert win.findChild(QDockWidget, "side-panel-dock") is None
+    assert win.side_panel.isVisible()
+    assert win.side_panel.y() < win.view.y()
     tabs = win.side_panel.tabs
     assert tabs.objectName() == "side-panel-tabs"
     assert [tabs.tabText(i) for i in range(tabs.count())] == \
         ["Elements", "Algebra", "Calculus", "Statistics", "Optimization", "Mechanical", "Electrical", "Chemical", "Outline", "Data"]
-    side_panel_action = dock.toggleViewAction()
+    side_panel_action = win.side_panel.toggleViewAction()
     assert side_panel_action.text() == "Side Panel"
     assert side_panel_action.isChecked()   # checked by default on first launch
     _close(win)
@@ -249,23 +250,22 @@ def test_criterion7_outline_and_data_tabs_are_placeholder_only():
 def test_criterion8_side_panel_closed_state_persists_across_restart():
     win = _make_window()
     win.side_panel.toggleViewAction().trigger()   # close it
-    assert not win.side_panel.isVisible()
+    assert win.side_panel.isHidden()
     _close(win)
 
     win2 = _make_window()
-    assert not win2.side_panel.isVisible()
+    assert win2.side_panel.isHidden()
+    assert not win2.side_panel.toggleViewAction().isChecked()
     _close(win2)
 
 
-def test_criterion8_side_panel_tab_and_width_persist_across_restart():
+def test_criterion8_side_panel_tab_persists_across_restart():
     win = _make_window()
     win.resize(1000, 700)
     win.show()
     QApplication.processEvents()
     win.side_panel.tabs.setCurrentIndex(2)
-    win.resizeDocks([win.side_panel], [200], Qt.Orientation.Horizontal)
     QApplication.processEvents()
-    width_before = win.side_panel.width()
     _close(win)
 
     win2 = _make_window()
@@ -273,14 +273,11 @@ def test_criterion8_side_panel_tab_and_width_persist_across_restart():
     win2.show()
     QApplication.processEvents()
     assert win2.side_panel.tabs.currentIndex() == 2
-    assert abs(win2.side_panel.width() - width_before) <= 10
     _close(win2)
 
 
-def test_criterion9_dock_width_range_and_canvas_minimum():
+def test_criterion9_canvas_minimum_width_kept_without_dock_caps_spec022():
     win = _make_window()
-    assert win.side_panel.minimumWidth() == 120
-    assert win.side_panel.maximumWidth() == 320
     assert win.view.minimumWidth() >= 400
     _close(win)
 

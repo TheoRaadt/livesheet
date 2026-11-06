@@ -1,13 +1,13 @@
 # Formula tabs: Mechanical, Electrical, Chemical
 
-Three tabs in the side panel hold ready-made formulas for common engineering calculations. One
+Three tabs in the tab strip hold ready-made formulas for common engineering calculations. One
 click puts the formula on your sheet; you then give its names your own values. This page covers
 the tabs, how to use them, the SI-only rule, and a trap to watch for with unit names. For the
-panel itself, see [The main window](main-window.md).
+strip and button band themselves, see [The main window](main-window.md).
 
 ## The tabs
 
-Open the side panel with **View > Side Panel**. The full tab order is: Elements, Algebra,
+The tab strip sits under the toolbar; if it is hidden, show it with **View > Side Panel**. The full tab order is: Elements, Algebra,
 Calculus, Statistics, Optimization, **Mechanical**, **Electrical**, **Chemical**, Outline, Data.
 
 Each formula tab groups its buttons under small grey headings:

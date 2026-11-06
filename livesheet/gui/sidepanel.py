@@ -1,4 +1,4 @@
-"""The dockable side panel: a tabbed Elements/Algebra/Calculus/Statistics/Optimization/
+"""The window-wide side panel (wrapping tab strip + button band, spec 022): a tabbed Elements/Algebra/Calculus/Statistics/Optimization/
 Outline/Data shell (spec 007 phase G2; restructured into 7 category tabs by spec 011).
 
 ``MATH_TOKENS`` is the single list of insertable math tokens -- same ``(category, label, token,
@@ -14,9 +14,9 @@ from __future__ import annotations
 
 from typing import Callable
 
-from PySide6.QtCore import Qt
+from PySide6.QtCore import Qt, Signal
+from PySide6.QtGui import QAction
 from PySide6.QtWidgets import (
-    QDockWidget,
     QLabel,
     QPushButton,
     QScrollArea,
@@ -26,6 +26,7 @@ from PySide6.QtWidgets import (
 )
 
 from ..engine.formatting import GREEK
+from .tabstrip import FlowLayout, TabStrip
 
 # 23 lowercase + 10 uppercase buttons, in the dict's own (Greek-alphabet) insertion order; the
 # "lamda"/"lambda" alias pair collapses to one button (spelled "lambda"); lowercase "pi" is not
@@ -197,41 +198,139 @@ def _build_placeholder_tab(message: str) -> QWidget:
     return widget
 
 
-class SidePanel(QDockWidget):
-    """Dockable, tabbed side panel: Elements/Algebra/Calculus (functional), Statistics/
-    Optimization/Outline/Data (placeholder shells)."""
+class _TabModel(QTabWidget):
+    """The tab model (native bar hidden; the window-wide strip drives it). Announces structural
+    changes so the strip can rebuild its buttons."""
+
+    structureChanged = Signal()
+
+    def tabInserted(self, index: int) -> None:
+        super().tabInserted(index)
+        self.structureChanged.emit()
+
+    def tabRemoved(self, index: int) -> None:
+        super().tabRemoved(index)
+        self.structureChanged.emit()
+
+
+class SidePanel(QWidget):
+    """Window-wide wrapping tab strip over a horizontal button band (spec 022).
+
+    Elements/Algebra/Calculus/... (functional) and Statistics/Optimization/Outline/Data
+    (placeholders) are the pages of ``tabs`` (a QTabWidget with its native bar hidden, hosted in
+    the band). The strip mirrors and drives ``tabs``.
+    """
+
+    MARGIN = 4
+    BAND_MAX_ROWS = 4
+    BAND_MAX_FRACTION = 0.25
 
     def __init__(self, insert_token: Callable[[str], None], parent: QWidget | None = None):
-        super().__init__("Side Panel", parent)
-        self.setObjectName("side-panel-dock")
-        self.setMinimumWidth(120)
-        self.setMaximumWidth(320)
+        super().__init__(parent)
+        self.setObjectName("side-panel")
         self._insert_token = insert_token
         self.symbol_buttons: dict[str, QPushButton] = {}
 
-        self.tabs = QTabWidget()
+        self.tabs = _TabModel()
         self.tabs.setObjectName("side-panel-tabs")
+        self.tabs.tabBar().hide()
         for name in TAB_ORDER:
             if name in TAB_CATEGORIES:
                 self.tabs.addTab(self._build_functional_tab(TAB_CATEGORIES[name]), name)
             else:
                 self.tabs.addTab(_build_placeholder_tab(PLACEHOLDER_TABS[name]), name)
-        self.setWidget(self.tabs)
+
+        self.strip = TabStrip()
+        self.strip.setObjectName("side-panel-strip")
+        self.strip.setAccessibleName("Side panel categories")
+        self.band = QWidget()
+        self.band.setObjectName("side-panel-band")
+        band_layout = QVBoxLayout(self.band)
+        band_layout.setContentsMargins(0, 0, 0, 0)
+        band_layout.addWidget(self.tabs)
+
+        layout = QVBoxLayout(self)
+        m = self.MARGIN
+        layout.setContentsMargins(m, m, m, m)
+        layout.setSpacing(2)
+        layout.addWidget(self.strip)
+        layout.addWidget(self.band)
+
+        self._toggle_action = QAction("Side Panel", self)
+        self._toggle_action.setCheckable(True)
+        self._toggle_action.setChecked(True)
+        self._toggle_action.toggled.connect(self.setVisible)
+
+        self.strip.tabRequested.connect(self.tabs.setCurrentIndex)
+        self.tabs.currentChanged.connect(self.strip.set_current)
+        self.tabs.structureChanged.connect(self._sync_strip)
+        self._sync_strip()
+
+    def toggleViewAction(self) -> QAction:
+        """Checkable View-menu action showing/hiding strip and band together."""
+        return self._toggle_action
+
+    def setVisible(self, visible: bool) -> None:
+        super().setVisible(visible)
+        if self._toggle_action.isChecked() != visible:
+            self._toggle_action.blockSignals(True)
+            self._toggle_action.setChecked(visible)
+            self._toggle_action.blockSignals(False)
+
+    def _sync_strip(self) -> None:
+        labels = [self.tabs.tabText(i) for i in range(self.tabs.count())]
+        self.strip.set_labels(labels, self.tabs.currentIndex())
+        self.update_band_height()
+
+    # -- band height --------------------------------------------------------------
+
+    def _page_height(self, page: QWidget, width: int) -> int:
+        if isinstance(page, QScrollArea) and page.widget() is not None:
+            inner = page.widget().layout()
+            if inner is not None and inner.hasHeightForWidth():
+                return inner.heightForWidth(width - 2 * page.frameWidth()) + 2 * page.frameWidth()
+        layout = page.layout()
+        if layout is not None and layout.hasHeightForWidth():
+            return layout.heightForWidth(width)
+        return page.sizeHint().height()
+
+    def band_clamp(self) -> int:
+        """Maximum band height: 4 button rows or 25% of the window height, whichever is larger."""
+        row_h = max((b.sizeHint().height() for b in self.symbol_buttons.values()), default=24)
+        rows = self.BAND_MAX_ROWS * (row_h + 4) + 12
+        window_h = self.window().height() if self.window() is not None else 0
+        return max(rows, int(window_h * self.BAND_MAX_FRACTION))
+
+    def update_band_height(self) -> None:
+        """Band height = tallest page at the current width, clamped; independent of the tab."""
+        width = max(self.width() - 2 * self.MARGIN, 1)
+        needed = max((self._page_height(self.tabs.widget(i), width)
+                      for i in range(self.tabs.count())), default=0) + 6
+        height = min(needed, self.band_clamp())
+        if self.band.height() != height or self.band.minimumHeight() != height:
+            self.band.setFixedHeight(height)
+            self.updateGeometry()
+
+    def resizeEvent(self, event) -> None:
+        super().resizeEvent(event)
+        self.update_band_height()
+
+    # -- pages --------------------------------------------------------------------
 
     def _build_functional_tab(self, categories: tuple[str, ...]) -> QWidget:
         container = QWidget()
-        layout = QVBoxLayout(container)
-        layout.setContentsMargins(6, 6, 6, 6)
-        layout.setSpacing(4)
+        layout = FlowLayout(container, margin=6, spacing=4)
         show_headers = len(categories) > 1
         for category in categories:
             items = [t for t in MATH_TOKENS if t[0] == category]
             if not items:
                 continue
+            first = True
             if show_headers:
                 header = QLabel(category)
                 header.setStyleSheet("color: #7a7a7a; font-weight: bold; font-size: 11px;")
-                layout.addWidget(header)
+                layout.add_widget(header, new_row=True)
+                first = False
             for _category, label, token, tip in items:
                 btn = QPushButton(label)
                 btn.setStyleSheet(
@@ -241,11 +340,12 @@ class SidePanel(QDockWidget):
                 )
                 btn.setToolTip(tip)
                 btn.clicked.connect(lambda _checked=False, t=token: self._insert_token(t))
-                layout.addWidget(btn)
+                layout.add_widget(btn, new_row=first and layout.count() > 0)
+                first = False
                 self.symbol_buttons[label] = btn
-        layout.addStretch(1)
         scroll = QScrollArea()
         scroll.setWidgetResizable(True)
+        scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
         scroll.setWidget(container)
         return scroll
 

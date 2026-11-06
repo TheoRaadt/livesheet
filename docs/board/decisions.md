@@ -242,3 +242,18 @@
 ## 2026-11-01 Bare-unit check review (review 022): Theo keeps the check
 - Formula tabs 018/019/020: tester PASS. _check_bare_units: tester found unit aliases (`u := m/s`, `dist := m`), conversion idioms (`m = mm`), `g =`, `z := [N m]` now error, because `F/A` and `m/s` are indistinguishable. Theo decided: keep the check, aliases break. Gaps (m^2, P/A, digit-containing expressions) stay open on purpose.
 - Manual must document: the limitation, the `g` = standard gravity trap (grams are `gm`), and the misleading message wording.
+
+## 2026-11-03 IP review of spec 022 (window-wide wrapping tab strip + button band): PASS (IP only)
+- Generic toolkit chrome (multi-row tab bar, wrapping button flow); no vendor layout, icons, colours or ribbon features (galleries, contextual tabs, collapsing groups) specified. Any ribbon-like extra needs a fresh IP review.
+- Not yet dispatched to the developer. Open questions for Theo (spec recommendation in brackets):
+  1. "Math panel" = Elements/Algebra/Calculus scrolled out of sight, not a separate panel? [yes]
+  2. Tab contents in a window-wide band under the strip, side dock retired? [yes, band]
+  3. Outline/Data placement once they get real content: defer to a follow-up spec? [defer]
+  4. Justified (equal-width, full row) vs natural-width tabs? [justified]
+  5. Keep the menu label "View > Side Panel"? [keep for now]
+  6. Confirm no further ribbon-like behaviour is wanted? [confirm]
+  7. Band height clamp: 4 button rows or 25% of window height? [accept]
+
+## 2026-11-03 Spec 022 open questions answered by Theo: accept all recommendations
+- Q1 yes (Math panel = scrolled-out tabs). Q2 band under window-wide strip, side dock retired. Q3 defer Outline/Data placement. Q4 justified tabs. Q5 keep "View > Side Panel". Q6 no further ribbon behaviour. Q7 band clamp 4 rows / 25% window height.
+- Spec 022 approved for the developer.

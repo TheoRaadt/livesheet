@@ -23,6 +23,8 @@ from PySide6.QtWidgets import (
     QMainWindow,
     QMessageBox,
     QToolBar,
+    QVBoxLayout,
+    QWidget,
 )
 
 from .. import __version__
@@ -105,7 +107,12 @@ class MainWindow(QMainWindow):
         super().__init__()
         self.sheet = Worksheet(self)
         self.view = WorksheetView(self.sheet, self)
-        self.setCentralWidget(self.view)
+        central = QWidget()
+        self._central_layout = QVBoxLayout(central)
+        self._central_layout.setContentsMargins(0, 0, 0, 0)
+        self._central_layout.setSpacing(0)
+        self._central_layout.addWidget(self.view)
+        self.setCentralWidget(central)
         self.path: Path | None = None
         self.settings = QSettings("LiveSheet", "LiveSheet")
 
@@ -138,6 +145,12 @@ class MainWindow(QMainWindow):
         if window_state is not None:
             self.restoreState(window_state)
             self._repair_floating_toolbars()
+
+    def resizeEvent(self, event) -> None:
+        super().resizeEvent(event)
+        panel = getattr(self, "side_panel", None)
+        if panel is not None:   # the band's height clamp depends on the window height
+            panel.update_band_height()
 
     def _repair_floating_toolbars(self) -> None:
         """Defend against a corrupted saved layout (spec 007 D1; simplified by spec 011's removal
@@ -251,11 +264,16 @@ class MainWindow(QMainWindow):
 
         # -- side panel (phase G2) --------------------------------------------------
         self.side_panel = SidePanel(self.insert_token, self)
-        self.addDockWidget(Qt.DockWidgetArea.LeftDockWidgetArea, self.side_panel)
-        self.view.setMinimumWidth(400)   # the canvas keeps >=400px even at the dock's max width
-        # QMainWindow.saveState() persists dock geometry/visibility but not a child QTabWidget's
-        # own current-tab state, so the active tab is tracked separately.
-        self.side_panel.tabs.setCurrentIndex(self.settings.value("side_panel_tab", 0, type=int))
+        self._central_layout.insertWidget(0, self.side_panel)   # strip+band above the canvas
+        self.view.setMinimumWidth(400)
+        # The active tab and the panel's visibility are tracked in our own settings keys.
+        tabs = self.side_panel.tabs
+        saved_tab = self.settings.value("side_panel_tab", 0, type=int)
+        tabs.setCurrentIndex(min(max(saved_tab, 0), tabs.count() - 1))
+        visible = self.settings.value("side_panel_visible", True, type=bool)
+        self.side_panel.setVisible(visible)
+        self.side_panel.toggleViewAction().toggled.connect(
+            lambda v: self.settings.setValue("side_panel_visible", v))
         self.side_panel.tabs.currentChanged.connect(
             lambda i: self.settings.setValue("side_panel_tab", i))
 

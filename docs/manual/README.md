@@ -11,8 +11,9 @@ It grows as features ship; a page only appears here once a feature is finished a
 
 - [Plots](plots.md) — inserting and editing a chart with the Plot dialog: picking what to plot,
   which variable to run it over, axis limits and units, titles and labels.
-- [The main window](main-window.md) — the toolbar, the ten-tab side panel (Elements, Algebra,
-  Calculus, the formula tabs, and placeholders for Statistics/Optimization/Outline/Data), typing Greek letters and
+- [The main window](main-window.md) — the toolbar, the window-wide ten-tab strip that wraps onto more rows
+  when narrow, and its button band (Elements, Algebra, Calculus, the formula tabs, and placeholders
+  for Statistics/Optimization/Outline/Data), keyboard use, typing Greek letters and
   subscripts, the status bar, and switching between a light, dark or system-following appearance.
 - [Vectors and matrices](matrices.md) — building a vector or matrix with the Matrix dialog instead
   of typing brackets by hand, and editing one you already have.
@@ -30,7 +31,7 @@ It grows as features ship; a page only appears here once a feature is finished a
 - [Pages and page breaks](pages.md) - the order LiveSheet calculates your regions in, splitting
   the sheet into A4 pages with Insert > Page Break, and how Export PDF treats those pages.
 - [Formula tabs: Mechanical, Electrical, Chemical](formula-tabs.md) - inserting ready-made SI
-  engineering formulas (47 buttons) from the side panel, filling in and renaming their names,
+  engineering formulas (47 buttons) from the tab strip, filling in and renaming their names,
   showing results in the unit you want, and why an undefined unit-named variable such as `F` or `A`
   now gives "is not defined" (including the `g` = standard gravity trap).
 - [Error messages](errors.md) — every message LiveSheet can show you while using the features

@@ -1,7 +1,7 @@
 # The main window
 
-LiveSheet's window has a menu bar, one toolbar, a dockable side panel, and a status bar, on top
-of the free-form canvas where your regions live.
+LiveSheet's window has a menu bar, one toolbar, a tab strip with a button band under it, and a
+status bar, around the free-form canvas where your regions live.
 
 ## The toolbar
 
@@ -13,18 +13,60 @@ handling (it cannot be pulled free into its own floating window). **View > Stand
 or hides it; wherever you leave it, and whether it's shown or hidden, is remembered the next time
 you open LiveSheet.
 
-There is no separate Math toolbar — every insertable math building block lives in the side panel
-instead, described below, so there is exactly one place to find each one.
+There is no separate Math toolbar — every insertable math building block lives in the tab strip
+and button band instead, described below, so there is exactly one place to find each one.
 
-## The side panel
+## The tab strip and button band
 
-**View > Side Panel** shows or hides a dockable panel on the left edge of the window, with ten
+Directly under the toolbar, across the whole width of the window, is a **tab strip** with ten
 tabs, in this order: **Elements**, **Algebra**, **Calculus**, **Statistics**, **Optimization**,
-**Mechanical**, **Electrical**, **Chemical**, **Outline**, **Data**. The Mechanical, Electrical and
-Chemical tabs hold ready-made engineering formulas; see [Formula tabs](formula-tabs.md). Clicking
-any entry in the three tabs below inserts it at the cursor in the
-math region you're editing (or creating, if nothing is being edited yet) — the same thing happens
-whether you click the button or use one of the keyboard shortcuts described further down.
+**Mechanical**, **Electrical**, **Chemical**, **Outline**, **Data**. Under the strip is the
+**button band**, which shows the buttons of whichever tab is selected. There is no panel on the
+left edge of the window any more, so the canvas uses the full width.
+
+**View > Side Panel** shows or hides the strip and the band together (the menu entry keeps its
+old name). Showing them again brings back the tab you last had selected.
+
+### How the strip behaves
+
+- Every tab always shows its full name. If the window is too narrow to fit all ten tabs on one
+  line, the strip continues on a second (or third, ...) row below instead of hiding tabs behind
+  scroll arrows. Widen the window and the tabs flow back onto fewer rows.
+- Each row is stretched so the tabs fill the full width. Tabs keep their order, and selecting a tab
+  never moves it.
+- The selected tab is shown in the accent colour with bold text, so it stands out in light and dark
+  appearance alike.
+- Click a tab to select it. The window cannot be made narrower than the widest tab name needs.
+
+### Using the strip with the keyboard
+
+The strip is one stop in the Tab key order. Once it has keyboard focus:
+
+| Key | What it does |
+|---|---|
+| Left / Right | Select the previous / next tab (nothing happens at the first / last tab) |
+| Up / Down | Select the tab nearest above / below on the row above / below (nothing if there is no row there) |
+| Home / End | Select the first / last tab |
+| Space or Enter | Select the focused tab |
+
+Switching tabs never takes the keyboard focus away from a region you are editing.
+
+### The button band
+
+- The band shows only the selected tab's buttons, using the window's width: buttons flow left to
+  right and wrap to further rows. Tabs with groups (Elements, Mechanical, Electrical, Chemical)
+  show each group's small grey heading, and each group starts on a new row. Algebra and Calculus
+  have no heading.
+- Statistics, Optimization, Outline and Data show only a short grey message for now (see below).
+- The band stays the same height when you switch tabs, so the canvas does not jump. It gets taller
+  or shorter only when you resize the window. It never grows past about four rows of buttons (or a
+  quarter of the window's height, if that is larger); a tab with more buttons than that scrolls up
+  and down inside the band, while the strip itself never scrolls.
+
+The Mechanical, Electrical and Chemical tabs hold ready-made engineering formulas; see
+[Formula tabs](formula-tabs.md). Clicking any button in the tabs below inserts it at the cursor in
+the math region you're editing (or creating, if nothing is being edited yet) — the same thing
+happens whether you click the button or use one of the keyboard shortcuts described further down.
 
 - **Elements** — the handful of symbols and operators you reach for on almost any line, in three
   groups:
@@ -51,12 +93,11 @@ whether you click the button or use one of the keyboard shortcuts described furt
   headings are available." and "Imported datasets will appear here once available."); they don't
   do anything yet, and will be filled in once document outlines and dataset import ship.
 
-You can resize the panel (between 120 and 320 pixels wide; the canvas itself always keeps at least
-400 pixels), and LiveSheet remembers the panel's open/closed state, its width, and which tab was
-active, the next time you open it. (If you're upgrading from a much older version of LiveSheet
-that only had three side-panel tabs, the very first time you reopen it the panel may land on a
-different tab than the one you last had open — purely cosmetic, and it fixes itself the moment you
-click any tab.)
+LiveSheet remembers whether the strip and band are shown and which tab was selected, and restores
+both the next time you open it. (If you're upgrading from an older version, the first time you
+reopen it the strip may land on a different tab than the one you last had open — purely cosmetic,
+and it fixes itself the moment you click any tab. An old saved window layout that mentioned the
+left-hand panel is simply ignored.)
 
 ### Typing Greek letters
 
@@ -64,8 +105,7 @@ You can get a Greek letter onto your sheet three ways, all equivalent:
 
 1. **Click its button** in the Elements tab's Greek letters group.
 2. **Type its English name by hand** anywhere in a math region — for example, typing `alpha`
-   displays as α once you move the cursor on. This works whether or not you ever open the side
-   panel.
+   displays as α once you move the cursor on. This works whether or not the tab strip is shown.
 3. **Use a keyboard shortcut**, while a math region is being created or edited, for the *lowercase*
    letters only (uppercase letters are click-only — there's no shortcut for Γ, Δ, Θ, Λ, Ξ, Π, Σ, Φ,
    Ψ or Ω). There are two separate sets of shortcuts, and both always work — a letter that appears
@@ -184,7 +224,7 @@ myfile.lsheet" right after you save).
 - **Dark**
 
 Switching takes effect immediately, no restart needed, and restyles the window's own chrome —
-menus, toolbars, the side panel, dialogs, the status bar and scrollbars. It does not change
+menus, toolbars, the tab strip and button band, dialogs, the status bar and scrollbars. It does not change
 anything the canvas draws itself: grid lines, region borders, the crosshair, and plot colours keep
 their own look regardless of which appearance you pick. Your choice is remembered the next time
 you open LiveSheet.
