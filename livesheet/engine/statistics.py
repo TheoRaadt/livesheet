@@ -502,6 +502,38 @@ def r_squared(coeffs, x, y):
     return sp.Float(1.0 - ss_res / ss_tot)
 
 
+def _has_free_symbols(args) -> bool:
+    return any(isinstance(a, sp.Basic) and any(not f.is_number for f in a.free_symbols)
+               for a in args)
+
+
+def _deferred(name: str, fn):
+    """Wrap a statistics function so it can sit inside a user-function body.
+
+    While the body is parsed its parameters are still free symbols; the call is then kept as an
+    unevaluated node. Substituting the parameters rebuilds the node, which now evaluates ``fn``
+    (no caching, so the ``*_sample`` functions stay random). Calls without free symbols run at once.
+    """
+    class _Call(sp.Function):
+        def __new__(cls, *args, **kwargs):
+            if not _has_free_symbols(args):
+                return fn(*args)
+            return sp.Basic.__new__(cls, *[sp.sympify(a) for a in args])
+
+        @property
+        def is_commutative(self):
+            return True
+
+    _Call.__name__ = name
+    _Call.__qualname__ = name
+
+    def wrapper(*args):
+        return _Call(*args)
+
+    wrapper.__name__ = name
+    return wrapper
+
+
 STATS_BUILTINS = {
     "mean": mean, "median": median, "mode": mode,
     "variance": variance, "stdev": stdev,
@@ -517,3 +549,6 @@ STATS_BUILTINS = {
     "poisson_quantile": poisson_quantile, "poisson_sample": poisson_sample,
     "fit_linear": fit_linear, "fit_poly": fit_poly, "predict": predict, "r_squared": r_squared,
 }
+
+
+STATS_BUILTINS = {k: _deferred(k, v) for k, v in STATS_BUILTINS.items()}

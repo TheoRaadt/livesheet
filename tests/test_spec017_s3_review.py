@@ -392,7 +392,6 @@ def test_define_use_later_and_redefine():
     assert res[6].output == "= 2"
 
 
-@pytest.mark.xfail(strict=True, reason="S3-D3: stats builtins (S1 and S3) cannot be called inside a user function body: 'u is not defined'")
 def test_predict_inside_user_function():
     res = run("c := fit_linear([0,1,2,3],[1,2,2,4])", "h(u) := predict(c, u)", "h(10) =")
     assert res[2].output == "= 9.9"
