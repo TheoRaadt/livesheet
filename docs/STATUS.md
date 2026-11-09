@@ -1,52 +1,53 @@
-# LiveSheet status (2026-11-06, end of session)
+# LiveSheet status (2026-11-09, end of session)
 
-Commits this session: `b44ebfc` (spec 017 S1), `05ee4b4` (spec 017 S2); earlier `b71a0de` (spec 022).
-Not pushed. **Spec 017 S3 (regression) is done and verified but NOT committed** (waiting for Theo's
-approval; message suggestion: "Add linear and polynomial regression (spec 017 S3)"). Last full suite:
-2467 passed, 10 xfailed, 0 failed (`QT_QPA_PLATFORM=offscreen pytest -q`, from ~/livesheet-venv).
-Untracked on purpose: the two vendor PDFs in docs/ (ip-cleanroom rule 7); `.idea` files stay out of commits.
+Commits this session: `e97b60e` (backlog 62 fix), `604ffb3` (docs + review tests for 62), plus the
+end-of-session commits listed in `git log` (specs 023, 025, 026 and board/manual updates).
+Not pushed. Untracked on purpose: the two vendor PDFs in docs/ (ip-cleanroom rule 7); `.idea` files
+stay out of commits.
 
 ## Done and accepted
-- **Spec 022** (wrapping window-wide tab strip + button band): done, tester PASS, manual updated.
-- **Spec 017 S1** (descriptive statistics, normal/uniform/binomial/Poisson): tester PASS, manual
-  docs/manual/statistics.md. Code: livesheet/engine/statistics.py.
-- **Spec 017 S2** (one-sample / Welch t-tests, chi-square; sample/expected/claim/level/verdict
-  tagged lines): tester PASS, M1/M2 fixed, manual. Code: livesheet/engine/stats_tests.py.
-- **Spec 017 S3** (fit_linear, fit_poly, predict, r_squared): tester PASS with conditions; D1
-  (silently wrong ill-conditioned fits) and D2 (false rank error on float x) fixed by an exact-
-  arithmetic centred fit; manual updated; doc examples re-run against the engine. Reviews:
-  docs/board/reviews/017-statistics-s{1,2,3}-review.md. Spec 017 is complete.
+- **Backlog 62** (stats functions inside user-function bodies): fixed, tester PASS (B62-R1 minor open as backlog 63), manual updated.
+- **Spec 023 drag-to-move**: root cause was a click-then-press arriving as a double-click (started editing instead of
+  moving). Fixed; tester PASS (56 tests); manual docs/manual/moving-regions.md. Real-window check still to do.
+- **Spec 025 larger Standard toolbar** (own vector icons, icon+label, icon-only on narrow windows): tester PASS;
+  manual updated. Real-window check still to do (wide/narrow, dark mode, docked left).
+- **Spec 026 Statistics (37) + Optimization (9) tab buttons**: implemented (see log.md for tester status).
+- **Spec 027 Outline tab**: developer was mid-work when the session ended; check docs/board/log.md and
+  `git status` for its state before relying on it. Tester review and manual update still pending.
+
+## Specs written and IP-approved, not yet implemented
+- **024 function autocomplete** (popup, Down/Up, Tab, Esc; engine/completion.py from the real builtin registry).
+- **028 data import core** (CSV -> datasets, embedded .lsheet v5, Data tab). Needs Theo's answers to the open
+  questions at the end of the spec (embed vs link, size limits, mixed-unit matrix, broken dataset, source path, JSON/Excel).
 
 ## Open, next session (in this order)
-1. **Commit spec 017 S3** (Theo's approval).
-2. **Real-window check on Theo's Mac** (nobody has had computer use; testers always ran headless):
-   wrapping tab strip + band (spec 022), page breaks, PDF export, the three formula tabs, demo.lsheet
-   layout, specs 010/011/013/014/015, and the new statistics sheets (hypothesis test: type it, change
-   `level`, save, reopen; regression fit).
-3. **Crash report from Theo**: app closes when switching a tab when run via PyCharm's Run button;
-   fine from the terminal. Need the Run-window text and the tab; check QT_QPA_PLATFORM is empty and
-   the interpreter is ~/livesheet-venv. Backlog 44. (Spec 022 changed the tab mechanism since, so it
-   may already be gone.)
-4. **Backlog 62 (new defect)**: statistics functions (`mean`, `predict`, ...) fail inside a user-
-   function body (`h(u) := predict(c, u)` gives `u is not defined`); `dot`/`det` work. Small developer
-   fix; documented in the manual as a known limitation until fixed.
-5. Statistics side-panel tab still has no buttons (spec 017 said no GUI change); a follow-up GUI spec
-   could add them. Outline/Data tab placement deferred (spec 022 Q3).
-6. Open spec 021 defaults unconfirmed by Theo: no undo for page-break reflow (undo, backlog 4/43, may
-   be worth pulling forward), 0.4% PDF shrink with breaks, deleting a break does not move content back.
-7. Standing backlog: M6 data components, spec 016 (3D plots, research only), beam FEM F2, document
-   quality items (headers/footers, sections), CAS depth, tab-role accessibility (QAccessible).
+1. Check 027 state (log.md), run the full suite (`QT_QPA_PLATFORM=offscreen pytest -q`), tester for 027,
+   documenter for 026/027 (main-window.md Tab strip text still calls Statistics/Optimization placeholders).
+2. **Real-window check on Theo's Mac**: drag-move (click then drag a selected region, Esc, hand cursors, edge scroll),
+   toolbar (wide/narrow, dark mode), new Statistics/Optimization/Outline tabs, wrapping tab strip, page breaks,
+   PDF export, formula tabs, save/reopen.
+3. **Backlog 64 (Theo)**: definite-integral button/template in the Calculus tab (engine already supports
+   `integrate(expr, (x, a, b))`; the ∫ button inserts an unclosed `integrate(`).
+4. Possible flaky tests: tests/test_spec023_review.py::test_open_hand_on_hover_arrow_on_empty_canvas (order-dependent?)
+   and the real-settings check in test_spec025_review (fails if other suites run concurrently). Tester of 026 was asked to look.
+5. Evaluation-order error hint: "x, y are not defined" could mention that definitions must come earlier (left to right,
+   then top to bottom); candidate backlog item.
+6. In-app help text does not mention Shift+arrow nudging (50 units).
+7. **Crash report from Theo**: app closes when switching a tab via PyCharm's Run button (backlog 44); need Run-window
+   text and the tab. May already be gone since spec 022.
+8. Then specs 024 and 028; standing backlog: M6 data components, spec 016, beam FEM F2, document quality, CAS depth,
+   undo (no undo exists; drag-move shipped without it), tab-role accessibility.
 
 ## Known engine limitations (documented in the manual)
 - Bare-unit check gaps (`m^2`, `P/A`, expressions with digits); unit aliases like `u := m/s` break.
-- `0 m` loses its unit (distribution functions accept it); `x := 2 m / 1 m` reads as m^2 (use
-  parentheses); `e` is Euler's number; `g` is standard gravity (grams are `gm`).
+- `0 m` loses its unit; `x := 2 m / 1 m` reads as m^2 (use parentheses); `e` is Euler's number; `g` is standard gravity.
 - Seeded sample values come from numpy's default_rng and may change across numpy major versions.
+- `f(u) := mean()` then `f(3) =` says "f is not defined" (backlog 63).
 
 ## Process notes
-- Testers must never run `git stash/reset/checkout` (a tester did once; recovered, nothing lost).
-- Subagents without a Bash tool (mathcad-specialist, documenter) cannot run examples: the manager
-  re-runs printed forms against `Engine().evaluate` before accepting docs.
+- Testers must never run `git stash/reset/checkout`. Tests must use an isolated QSettings (temp INI), never the real one.
+- Plain `pytest` in the project `.venv` crashes (macOS hidden flag); use `~/livesheet-venv` or `chflags -R nohidden .venv`.
+- Subagents without a Bash tool (mathcad-specialist, documenter, gui/modeling-specialist) cannot run examples or append to log.md.
 - Git in the mounted folder may leave .lock files; move them to .git/stale-*.
 
 ## How to run

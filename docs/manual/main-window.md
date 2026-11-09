@@ -13,6 +13,33 @@ handling (it cannot be pulled free into its own floating window). **View > Stand
 or hides it; wherever you leave it, and whether it's shown or hidden, is remembered the next time
 you open LiveSheet.
 
+### How the toolbar looks
+
+Each toolbar button is a small picture with its name beside it: **New**, **Open**, **Save**,
+**Export PDF** and **Recalculate**. The buttons are deliberately larger than the buttons in the
+button band below, and a little taller than the tabs, so they are easy to hit. The pictures and the
+button height grow along with your system's text size, and the pictures are drawn sharply on
+high-resolution screens. They also follow Light and Dark appearance.
+
+The **File** and **Calculate** menus do not show these pictures; their entries look the same as
+before.
+
+### When the window is narrow
+
+The toolbar never forces the window to be wider. As you make the window narrower:
+
+1. While there is room, every button shows its picture and its name.
+2. When the names no longer fit, the buttons switch to **picture only**, at the same size. Hover
+   over a button to see its name and shortcut, for example `Save (Ctrl+S)`,
+   `Export PDF (Ctrl+Shift+E)` or `Recalculate (F9)`. Screen readers still announce the full name.
+3. If even the pictures do not fit, a small **chevron** (`>>`) appears at the right end of the
+   toolbar. Click it to see the hidden commands by name.
+
+To keep the toolbar from flickering while you drag the window edge, the names come back only once
+the window is a little wider (about 24 pixels) than the width at which they disappeared. If you
+drag the toolbar to the left or right edge of the window, it shows pictures only and stacks the
+buttons vertically.
+
 There is no separate Math toolbar — every insertable math building block lives in the tab strip
 and button band instead, described below, so there is exactly one place to find each one.
 

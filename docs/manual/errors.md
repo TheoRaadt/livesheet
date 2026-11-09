@@ -263,3 +263,17 @@ This message appears in the status bar at the bottom left of the window (not on 
 A related message that is not an error: after a successful break, the status bar reads
 `Page break inserted; moved N regions down by D units.` (for example `moved 2 regions down by 720
 units`). It tells you how much content was pushed down.
+
+## Moving regions
+
+Moving regions adds no messages of its own. After a drag or nudge, a region that now sits before
+the definition it needs shows `<name> is not defined` (see
+[Undefined names and bare units](#undefined-names-and-bare-units)). Move the definition or the
+region back, or place the definition further left or higher up in the same column. See
+[Moving regions](moving-regions.md).
+
+## The toolbar
+
+The larger Standard toolbar adds no error messages. If you cannot see the names on the buttons,
+the window is narrow: the toolbar shows pictures only, with the name in the tooltip. See
+[The main window](main-window.md#how-the-toolbar-looks).

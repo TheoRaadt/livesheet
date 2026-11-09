@@ -11,7 +11,8 @@ It grows as features ship; a page only appears here once a feature is finished a
 
 - [Plots](plots.md) — inserting and editing a chart with the Plot dialog: picking what to plot,
   which variable to run it over, axis limits and units, titles and labels.
-- [The main window](main-window.md) — the toolbar, the window-wide ten-tab strip that wraps onto more rows
+- [The main window](main-window.md) — the toolbar (larger icon-and-label buttons, picture-only and
+  overflow chevron on narrow windows), the window-wide ten-tab strip that wraps onto more rows
   when narrow, and its button band (Elements, Algebra, Calculus, the formula tabs, and placeholders
   for Statistics/Optimization/Outline/Data), keyboard use, typing Greek letters and
   subscripts, the status bar, and switching between a light, dark or system-following appearance.
@@ -40,5 +41,8 @@ It grows as features ship; a page only appears here once a feature is finished a
   (one-sample t, Welch two-sample t, chi-square fit) with `sample`/`claim`/`level`/`verdict` lines;
   and regression (`fit_linear`, `fit_poly`, `predict`, `r_squared`) to fit a line or polynomial
   through paired data.
+- [Moving regions](moving-regions.md) - dragging regions (click then drag, grabbing the frame
+  while editing, moving a group), grid snapping, Esc to cancel, arrow-key and Shift+arrow nudging,
+  and how a move changes the calculation order.
 - [Error messages](errors.md) — every message LiveSheet can show you while using the features
   above, grouped by area, with what causes it and how to fix it.
