@@ -483,12 +483,25 @@ itself is fine; `predict` and `r_squared` use the same coefficients and give the
 your data. If the `x` values are all identical, or too few different values exist for the degree you
 asked for, LiveSheet says `Matrix does not have full column rank` instead of guessing.
 
+### Using statistics inside your own functions
+
+The statistics functions, including `predict`, work in the body of a function you define. For
+example:
+
+```
+x := [1;2;3;4]
+y := [2;4;5;8]
+c := fit_linear(x, y)
+g(u) := predict(c, u)
+g(10) =          = 19
+```
+
+Other examples that work the same way: `h(u) := mean([u, 1])` then `h(3) =` gives `= 2`, and
+`n(u) := normal_cdf(u, 0, 1)` then `n(0) =` gives `= 0.5`. Units carry through, and one function
+can call another.
+
 ### Known limitations
 
-- **Not inside your own function.** The statistics functions, including `predict`, cannot yet be
-  used in the body of a function you define. `h(u) := predict(c, u)` gives `u is not defined` on
-  the definition line. Call them directly on a region instead, as in `predict(c, 10)`. This is a
-  known defect that also affects `mean` and the other statistics functions.
 - A fit is only as good as its model: `r_squared` close to 1 does not prove the data is truly a
   line or polynomial.
 
