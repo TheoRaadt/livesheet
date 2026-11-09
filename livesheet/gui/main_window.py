@@ -29,6 +29,8 @@ from PySide6.QtWidgets import (
 
 from .. import __version__
 from ..document import FILE_SUFFIX, DocumentError, SheetDocument
+from .icons import glyph_icon
+from .toolbarstyle import ToolbarStyler
 from .paths import default_save_path, remembered_dir
 from .regions import MathRegion
 from .sidepanel import SidePanel
@@ -251,6 +253,14 @@ class MainWindow(QMainWindow):
         self.standard_toolbar.addAction(self.action_export_pdf)
         self.standard_toolbar.addSeparator()
         self.standard_toolbar.addAction(self.action_recalculate)
+        # Spec 025: own vector icons + short labels; menus keep their text-only look.
+        for act, glyph in ((self.action_new, "new"), (self.action_open, "open"),
+                           (self.action_save, "save"), (self.action_export_pdf, "export"),
+                           (self.action_recalculate, "recalculate")):
+            act.setIcon(glyph_icon(glyph))
+        self.toolbar_styler = ToolbarStyler(self.standard_toolbar, {
+            self.action_new: "New", self.action_open: "Open", self.action_save: "Save",
+            self.action_export_pdf: "Export PDF", self.action_recalculate: "Recalculate"})
 
         # -- Greek-letter keyboard shortcuts (spec 011 addenda 1/2): no visible menu entry of
         # their own (purely keyboard shortcuts), registered directly on the window so they fire
@@ -264,6 +274,7 @@ class MainWindow(QMainWindow):
 
         # -- side panel (phase G2) --------------------------------------------------
         self.side_panel = SidePanel(self.insert_token, self)
+        self.side_panel.attach_sheet(self.sheet, self.view)
         self._central_layout.insertWidget(0, self.side_panel)   # strip+band above the canvas
         self.view.setMinimumWidth(400)
         # The active tab and the panel's visibility are tracked in our own settings keys.
