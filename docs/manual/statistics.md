@@ -2,9 +2,10 @@
 
 LiveSheet can summarise a list of measurements (mean, spread, percentiles, how two lists move
 together), evaluate four standard probability distributions (normal, uniform, binomial and
-Poisson) and run hypothesis tests (see [Hypothesis tests](#hypothesis-tests) at the end of this
-page). Except for the tests, everything here is an ordinary function you type into a math region, the same way you
-already type `sin(x)` or `sqrt(x)`. There is nothing to insert and no dialog.
+Poisson), run hypothesis tests (see [Hypothesis tests](#hypothesis-tests)) and fit a straight line
+or a polynomial through paired data (see [Regression](#regression-fitting-a-line-or-curve-to-data)).
+Except for the tests, everything here is an ordinary function you type into a math region, the same
+way you already type `sin(x)` or `sqrt(x)`. There is nothing to insert and no dialog.
 
 The **Statistics** tab in the tab strip has no buttons yet. Type the functions by hand.
 
@@ -360,6 +361,135 @@ Rules for the chi-square test:
   example `sample2 in g` is not treated as a test line.
 - Each line is also checked where it stands, so a bad `claim`, `level` or `expected` line shows
   its own error right away, before `verdict`.
-- Curve fitting (regression, the third phase of the statistics work) is not part of LiveSheet yet.
+
+## Regression: fitting a line or curve to data
+
+You have paired measurements, an `x` list and a `y` list of the same length, and you want the
+straight line or low-degree curve that comes closest to them (a least-squares fit). Four functions
+cover it:
+
+| Function | Gives you |
+|---|---|
+| `fit_linear(x, y)` | The best straight line `y = c0 + c1*x`, as a vector of its two coefficients. |
+| `fit_poly(x, y, degree)` | The best polynomial of the whole-number `degree` you choose (1 or more), as a vector of `degree + 1` coefficients. |
+| `predict(c, x)` | The fitted value at `x`, given a coefficient vector `c`. |
+| `r_squared(c, x, y)` | A number saying how well the fit follows your data (1 is a perfect fit). |
+
+### The coefficient vector: constant term first
+
+The vector that `fit_linear` and `fit_poly` return is a single column that **starts with the
+constant term and goes up in powers of x**: `[c0; c1; c2; ...]` stands for
+`c0 + c1*x + c2*x² + ...`. For a line that means `[intercept; slope]`. Note that this is the
+opposite order from some other tools, which list the highest power first. `fit_poly(x, y, 1)`
+gives exactly the same vector as `fit_linear(x, y)`.
+
+### Worked example: a straight line
+
+Four readings that roughly follow a line:
+
+```
+x := [0, 1, 2, 3]
+y := [1, 2, 2, 4]
+c := fit_linear(x, y)
+c =                          = [0.9; 0.9]
+predict(c, 4) =              = 4.5
+r_squared(c, x, y) =         = 0.852632
+```
+
+The line is `y = 0.9 + 0.9*x`. At `x = 4` it predicts 4.5. The `r_squared` of 0.852632 says the line
+accounts for about 85 percent of the variation in `y`; a perfect fit gives 1. When your data lies
+exactly on a line you get exactly its coefficients: `x := [0, 1, 2, 3]` and `y := [1, 3, 5, 7]` give
+`[1; 2]` and an `r_squared` of 1.
+
+### Worked example: a curve
+
+`fit_poly` with `degree` 2 fits a parabola. These five points lie exactly on `y = 1 + x²`:
+
+```
+x := [0, 1, 2, 3, 4]
+y := [1, 2, 5, 10, 17]
+c := fit_poly(x, y, 2)
+c =                          = [1; 0; 1]
+predict(c, 5) =              = 26
+r_squared(c, x, y) =         = 1
+```
+
+The coefficients are `[1; 0; 1]`: a constant of 1, no `x` term, and `x²` with factor 1.
+
+The degree must be a whole number, at least 1, and **less than the number of points**. With 4 points
+you can ask for degree 3 (the curve then passes through every point, and `r_squared` is 1) but not
+degree 4.
+
+### Using predict
+
+`predict(c, x)` accepts a single number or a list for `x`. A list gives back a list of the same
+shape: a row stays a row, a column stays a column.
+
+```
+predict(c, [0, 1, 2]) =      = [1, 2, 5]
+```
+
+(using `c` from the curve example). You can also build the coefficient vector by hand, for example
+`predict([1; 2], 3)` evaluates `1 + 2*3` and gives 7. The coefficients must be a single column or
+row; `x` may not be a matrix with several rows and columns.
+
+### r_squared
+
+`r_squared(c, x, y)` compares the fitted values with your `y` values. It never has a unit. A fit
+that includes a constant term gives a value between 0 and 1. A badly chosen coefficient vector,
+for example one you typed by hand, can give a negative number; that is not an error. `x` and `y`
+must be the same length. If every `y` is the same value there is nothing to explain and you get an
+error (see [Error messages](errors.md)).
+
+### Units
+
+Units carry through the fit. For a fit of `y` against `x`, the coefficient of `x^k` has the unit of
+`y` divided by the unit of `x`, to the power `k`:
+
+```
+x := [0, 1, 2, 3] s
+y := [1, 3, 5, 7] m
+fit_linear(x, y) =           = [1 m; 2 m/s]
+predict(fit_linear(x, y), 4 s) = 9 m
+```
+
+A degree-2 fit of the same kind gives, for example, `[1 m; 0 m/s; 1 m/s²]`. When you call `predict`,
+give `x` in the unit you fitted with (or one of the same kind); `predict(..., 4 m)` here fails with
+`Units do not match` because a length is not a time. `r_squared` needs the predicted values and your
+`y` values to be the same kind of unit, otherwise it reports `Units do not match`.
+
+**When both lists are lengths.** If `x` is in `mm` and `y` is in `m`, the slope is a length divided
+by a length, which LiveSheet treats as a plain number. Its value is 2000 for a line that rises 2 m
+per mm. It shows as `2000`, not as a unit. The values are still right in base units: a prediction
+for `4 mm` comes back in `m`, correct. The same applies to the higher coefficients.
+
+### Exact answers and difficult data
+
+When your `x` and `y` values are whole numbers or fractions, the coefficients are worked out exactly
+(you see `[1; 0; 1]`, not `[0.999999; 0; 1.000001]`). With decimal values the answer is accurate to
+the printed 6 digits.
+
+Data whose `x` values sit far from zero, such as years, kilometre posts or timestamps, is handled
+correctly too. For example:
+
+```
+x := [10000, 10001, 10002, 10003, 10004, 10005]
+y := [1, 3.1, 4.9, 7.2, 8.8, 11.1]
+fit_poly(x, y, 2) =          = [337351; -69.4493; 0.00357143]
+```
+
+The constant term is huge because it is the value at `x = 0`, far outside your data. The curve
+itself is fine; `predict` and `r_squared` use the same coefficients and give the right values near
+your data. If the `x` values are all identical, or too few different values exist for the degree you
+asked for, LiveSheet says `Matrix does not have full column rank` instead of guessing.
+
+### Known limitations
+
+- **Not inside your own function.** The statistics functions, including `predict`, cannot yet be
+  used in the body of a function you define. `h(u) := predict(c, u)` gives `u is not defined` on
+  the definition line. Call them directly on a region instead, as in `predict(c, 10)`. This is a
+  known defect that also affects `mean` and the other statistics functions.
+- A fit is only as good as its model: `r_squared` close to 1 does not prove the data is truly a
+  line or polynomial.
 
 Messages you may meet are listed under "Statistics" in [Error messages](errors.md).

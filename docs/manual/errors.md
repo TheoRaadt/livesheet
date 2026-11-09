@@ -194,7 +194,7 @@ example `mean`, `normal_pdf`). See [Statistics](statistics.md).
 | `q must be at least 0 and less than 1` | The `q` of `poisson_quantile` is below 0 or is 1 or more. | Use a value from 0 up to, but not including, 1. |
 | `p must be strictly between 0 and 1` | `normal_quantile` was given exactly 0 or 1, or a value outside. | Use a value greater than 0 and less than 1. |
 | `<f>() is undefined when a vector is constant` (e.g. `correlation() is undefined when a vector is constant`; also `covariance`) | All entries of one of the two lists are equal. | Use data that varies. |
-| `Vectors must have the same length (<m> and <n>)` (e.g. `(2 and 3)`) | The two lists given to `covariance` or `correlation` differ in length. | Make both lists the same length. |
+| `Vectors must have the same length (<m> and <n>)` (e.g. `(2 and 3)`) | The two lists given to `covariance`, `correlation`, `fit_linear`, `fit_poly` or `r_squared` (its `x` and `y`) differ in length. | Make both lists the same length. |
 | `Units do not match` | A list has entries with different kinds of unit, or a display unit you asked for doesn't fit the result. | Use one kind of unit throughout, or a matching display unit. |
 | `<name> is not defined` | A list entry or argument uses a name not defined earlier on the sheet. | Define it above, or fix the typo. |
 | `<f>() does not accept a unit in this version` (e.g. `normal_pdf() does not accept a unit in this version`) | A distribution or sampling function, or the `p` of `quantile`, was given a value with a unit. | Pass plain numbers; remove the unit (see the notes in [Statistics](statistics.md)). |
@@ -206,6 +206,14 @@ example `mean`, `normal_pdf`). See [Statistics](statistics.md).
 | `n must be a positive integer` | The `n` (number of draws) of a `..._sample` function is zero, negative or not a whole number. | Use a whole number of 1 or more. |
 | `n is too large (max 10000)` | More than 10000 draws were requested. | Ask for 10000 or fewer. |
 | `seed must be a non-negative integer` | The `seed` of a `..._sample` function is negative or not a whole number. | Use a whole number of 0 or more. |
+| `fit_linear() needs at least 2 points` | `fit_linear` was given fewer than 2 points (or a single number). | Supply at least 2 `(x, y)` pairs. |
+| `degree must be a positive integer` | The `degree` of `fit_poly` is 0, negative, fractional, or a matrix. | Use a whole number of 1 or more, for example `2`. |
+| `degree <d> needs at least <d+1> points, has <n>` (e.g. `degree 5 needs at least 6 points, has 4`) | `fit_poly` was asked for a degree that is not smaller than the number of points. | Lower the degree below the number of points, or add data. |
+| `Matrix does not have full column rank` | The fit cannot be settled: for example all `x` values are the same, or there are too few different `x` values for the degree. | Use data with more distinct `x` values, or lower the degree. |
+| `predict() needs a vector of coefficients` | The first argument of `predict` (or `r_squared`) is a single number or a matrix with several rows and columns. | Pass the vector returned by `fit_linear`/`fit_poly`, or a single column or row of coefficients, constant term first. |
+| `predict() needs a scalar or vector x` | The `x` given to `predict` is a matrix with several rows and columns. | Pass a single number or a single row or column. |
+| `r_squared() is undefined when y is constant` | Every value in `y` is the same, so there is no variation for the fit to explain. | Use `y` data that varies. |
+| `Units do not match` (regression) | `predict`'s `x` is not the same kind of unit as the `x` you fitted with, or `r_squared`'s predicted values and `y` are different kinds of unit. | Give `x` in the unit you fitted with (or one of the same kind); check that `y` has the unit the coefficients were fitted for. |
 
 ### Hypothesis tests
 

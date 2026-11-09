@@ -1,44 +1,53 @@
-# LiveSheet status (2026-11-06)
+# LiveSheet status (2026-11-06, end of session)
 
-Update 2026-11-06: spec 022 (wrapping tab strip + button band) is DONE: implemented, tester PASS (review 022-wrapping-tab-strip-review), D1 fixed, manual updated, committed `b71a0de`. Suite: 2126 passed, 8 xfailed. Open item 3 below is closed; Outline/Data placement deferred to a follow-up spec. Real-window Mac check still outstanding (items 1-2 need Theo).
+Commits this session: `b44ebfc` (spec 017 S1), `05ee4b4` (spec 017 S2); earlier `b71a0de` (spec 022).
+Not pushed. **Spec 017 S3 (regression) is done and verified but NOT committed** (waiting for Theo's
+approval; message suggestion: "Add linear and polynomial regression (spec 017 S3)"). Last full suite:
+2467 passed, 10 xfailed, 0 failed (`QT_QPA_PLATFORM=offscreen pytest -q`, from ~/livesheet-venv).
+Untracked on purpose: the two vendor PDFs in docs/ (ip-cleanroom rule 7); `.idea` files stay out of commits.
 
-# (2026-11-01 snapshot)
-
-Commits this session: `4b14919` (spec 021 page breaks + evaluation order, plus all earlier accepted
-work), `c230a01` (formula tabs 018/019/020, bare-unit check, manual). Not pushed. Last full suite:
-2032 passed, 8 xfailed, 0 failed (`QT_QPA_PLATFORM=offscreen pytest -q`, from ~/livesheet-venv).
-Only the two vendor PDFs in docs/ are untracked on purpose (ip-cleanroom rule 7).
-
-## Done and accepted today
-- **Spec 021**: evaluation order is now page by page, left to right, then top to bottom (stable
-  creation-order tie-break; closes backlog 28); Insert > Page Break (Ctrl+Return) with Word-style
-  reflow, fold guides, per-page A4 PDF export, .lsheet v4 `page_breaks`, wiring tie-break flipped.
-  Manual: docs/manual/pages.md. Reviews: docs/board/reviews/021-*.
-- **Specs 018/019/020**: Mechanical (15), Electrical (11), Chemical (21) side-panel tabs; order
-  Elements, Algebra, Calculus, Statistics, Optimization, Mechanical, Electrical, Chemical, Outline,
-  Data. Manual: docs/manual/formula-tabs.md. Review 022: PASS.
-- **_check_defined hardening**: a bare unit name that is not defined (`sigma := F/A`) now errors.
-  Theo accepted the side effects (unit aliases like `u := m/s`, `m = mm`, `g =` break). Known silent
-  gaps: `m^2`, `P/A`, expressions with digits. Documented in the manual.
-- **Spec 017 (statistics)**: IP review PASS, all 8 open questions answered (decisions.md). Not built.
-- Agent config: mathcad-specialist now runs on the haiku model (.claude/agents/mathcad-specialist.md).
+## Done and accepted
+- **Spec 022** (wrapping window-wide tab strip + button band): done, tester PASS, manual updated.
+- **Spec 017 S1** (descriptive statistics, normal/uniform/binomial/Poisson): tester PASS, manual
+  docs/manual/statistics.md. Code: livesheet/engine/statistics.py.
+- **Spec 017 S2** (one-sample / Welch t-tests, chi-square; sample/expected/claim/level/verdict
+  tagged lines): tester PASS, M1/M2 fixed, manual. Code: livesheet/engine/stats_tests.py.
+- **Spec 017 S3** (fit_linear, fit_poly, predict, r_squared): tester PASS with conditions; D1
+  (silently wrong ill-conditioned fits) and D2 (false rank error on float x) fixed by an exact-
+  arithmetic centred fit; manual updated; doc examples re-run against the engine. Reviews:
+  docs/board/reviews/017-statistics-s{1,2,3}-review.md. Spec 017 is complete.
 
 ## Open, next session (in this order)
-1. **Real-window check on Theo's Mac** (nobody has had computer use): page breaks, PDF export, the
-   three new tabs, demo.lsheet layout (three regions moved to x=300), plus specs 010/011/013/014/015.
-2. **Crash report from Theo**: app closes when switching a tab when run via PyCharm's Run button;
-   fine from the terminal. Ask for the Run-window text and the tab; check PyCharm env vars
-   (QT_QPA_PLATFORM must be empty) and interpreter (~/livesheet-venv). Backlog 44.
-3. **Spec 022 (wrapping full-window tab strip)**: spec FINAL (window-wide strip + button band, side-panel dock retired, 8 open questions incl. Outline/Data placement, row stretch, band height) written by gui-specialist, manager IP review
-   and answering its open questions come next; Theo wants the tab strip across the whole app window
-   (under the menu bar), all 10 tabs visible, wrapping to more rows when narrow. Not built.
-4. **Spec 017 statistics**: verify its worked examples against the engine, then dispatch S1 when
-   Theo says go.
-5. Open spec 021 defaults still unconfirmed by Theo: no undo for page-break reflow (undo, backlog
-   4/43, may be worth pulling forward), 0.4% PDF shrink with breaks, deleting a break does not move
-   content back.
-6. Standing backlog: M6 data components, spec 016 (3D plots, research only), beam FEM F2,
-   document quality items (headers/footers, sections), CAS depth.
+1. **Commit spec 017 S3** (Theo's approval).
+2. **Real-window check on Theo's Mac** (nobody has had computer use; testers always ran headless):
+   wrapping tab strip + band (spec 022), page breaks, PDF export, the three formula tabs, demo.lsheet
+   layout, specs 010/011/013/014/015, and the new statistics sheets (hypothesis test: type it, change
+   `level`, save, reopen; regression fit).
+3. **Crash report from Theo**: app closes when switching a tab when run via PyCharm's Run button;
+   fine from the terminal. Need the Run-window text and the tab; check QT_QPA_PLATFORM is empty and
+   the interpreter is ~/livesheet-venv. Backlog 44. (Spec 022 changed the tab mechanism since, so it
+   may already be gone.)
+4. **Backlog 62 (new defect)**: statistics functions (`mean`, `predict`, ...) fail inside a user-
+   function body (`h(u) := predict(c, u)` gives `u is not defined`); `dot`/`det` work. Small developer
+   fix; documented in the manual as a known limitation until fixed.
+5. Statistics side-panel tab still has no buttons (spec 017 said no GUI change); a follow-up GUI spec
+   could add them. Outline/Data tab placement deferred (spec 022 Q3).
+6. Open spec 021 defaults unconfirmed by Theo: no undo for page-break reflow (undo, backlog 4/43, may
+   be worth pulling forward), 0.4% PDF shrink with breaks, deleting a break does not move content back.
+7. Standing backlog: M6 data components, spec 016 (3D plots, research only), beam FEM F2, document
+   quality items (headers/footers, sections), CAS depth, tab-role accessibility (QAccessible).
+
+## Known engine limitations (documented in the manual)
+- Bare-unit check gaps (`m^2`, `P/A`, expressions with digits); unit aliases like `u := m/s` break.
+- `0 m` loses its unit (distribution functions accept it); `x := 2 m / 1 m` reads as m^2 (use
+  parentheses); `e` is Euler's number; `g` is standard gravity (grams are `gm`).
+- Seeded sample values come from numpy's default_rng and may change across numpy major versions.
+
+## Process notes
+- Testers must never run `git stash/reset/checkout` (a tester did once; recovered, nothing lost).
+- Subagents without a Bash tool (mathcad-specialist, documenter) cannot run examples: the manager
+  re-runs printed forms against `Engine().evaluate` before accepting docs.
+- Git in the mounted folder may leave .lock files; move them to .git/stale-*.
 
 ## How to run
 `source ~/livesheet-venv/bin/activate && livesheet` (new empty sheet) or `livesheet file.lsheet`.

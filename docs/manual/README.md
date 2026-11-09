@@ -37,6 +37,8 @@ It grows as features ship; a page only appears here once a feature is finished a
 - [Statistics](statistics.md) - mean, median, mode, sample and population variance/standard
   deviation, quantiles, covariance and correlation of a list of measurements; normal, uniform,
   binomial and Poisson distribution functions; seeded random samples; and hypothesis tests
-  (one-sample t, Welch two-sample t, chi-square fit) with `sample`/`claim`/`level`/`verdict` lines.
+  (one-sample t, Welch two-sample t, chi-square fit) with `sample`/`claim`/`level`/`verdict` lines;
+  and regression (`fit_linear`, `fit_poly`, `predict`, `r_squared`) to fit a line or polynomial
+  through paired data.
 - [Error messages](errors.md) — every message LiveSheet can show you while using the features
   above, grouped by area, with what causes it and how to fix it.

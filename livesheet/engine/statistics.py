@@ -11,9 +11,10 @@ from collections import Counter
 
 import sympy as sp
 
-from .matrices import (_DENSE, _has_unit, _is_scalar, _is_vector, smul, unit_of,
-                       split_units, wrap)
+from .matrices import (_DENSE, _has_unit, _is_scalar, _is_vector, sadd, smul,
+                       solve_least_squares, split_units, unit_of, wrap)
 from .syntax import StatementError
+from .units import UnitError
 
 MAX_SAMPLE = 10000
 _TIE_TOLERANCE = 1e-12  # absolute tolerance when comparing a cdf with a quantile level
@@ -358,6 +359,149 @@ def poisson_sample(lambda_, n, seed):
     return _column([int(x) for x in rng.poisson(lam, count)], integer=True)
 
 
+# ---------------------------------------------------------------- regression (spec 017 S3)
+
+def _paired(name: str, x, y):
+    """(x magnitudes, y magnitudes, x dims, y dims) of two equal-length vectors, exact if possible."""
+    ex, fx, dx = _vector(name, x)
+    ey, fy, dy = _vector(name, y)
+    if len(fx) != len(fy):
+        raise StatementError(f"Vectors must have the same length ({len(fx)} and {len(fy)})")
+    mx, _ = split_units(_DENSE(len(ex), 1, ex))
+    my, _ = split_units(_DENSE(len(ey), 1, ey))
+    return list(mx), list(my), dx, dy
+
+
+def _as_fractions(values):
+    """Exact Fractions for numeric sympy values, or None if any is not a plain number."""
+    from fractions import Fraction
+
+    out = []
+    for v in values:
+        if not getattr(v, "is_number", False) or not v.is_real:
+            return None
+        if isinstance(v, sp.Rational):
+            out.append(Fraction(int(v.p), int(v.q)))
+        else:
+            try:
+                out.append(Fraction(float(v)))
+            except (TypeError, ValueError, OverflowError):
+                return None
+    return out
+
+
+def _exact_poly_fit(fx, fy, degree: int):
+    """Least-squares polynomial coefficients (powers of raw x) in exact arithmetic.
+
+    x is centred on its mean before forming the normal equations, and the result is
+    converted back to powers of raw x with exact Fractions, so no precision is lost.
+    Returns None when the fit is rank deficient.
+    """
+    from fractions import Fraction
+    from math import comb
+
+    n = len(fx)
+    c = sum(fx) / n
+    u = [x - c for x in fx]
+    pw = [[Fraction(1)] * n]
+    for _ in range(2 * degree):
+        pw.append([p * ui for p, ui in zip(pw[-1], u)])
+    sums = [sum(row) for row in pw]
+    m = sp.Matrix(degree + 1, degree + 1,
+                  lambda i, j: sp.Rational(sums[i + j].numerator, sums[i + j].denominator))
+    rhs = [sum(p * y for p, y in zip(pw[j], fy)) for j in range(degree + 1)]
+    b = sp.Matrix([sp.Rational(r.numerator, r.denominator) for r in rhs])
+    if m.det() == 0:
+        return None
+    sol = m.LUsolve(b)
+    cs = sp.Rational(c.numerator, c.denominator)
+    return [sum(sol[j] * comb(j, k) * (-cs) ** (j - k) for j in range(k, degree + 1))
+            for k in range(degree + 1)]
+
+
+def _fit_coefficients(mx, my, degree: int):
+    fx, fy = _as_fractions(mx), _as_fractions(my)
+    if fx is not None and fy is not None:
+        coeffs = _exact_poly_fit(fx, fy, degree)
+        if coeffs is None:
+            raise StatementError("Matrix does not have full column rank")
+        if any(isinstance(v, sp.Float) for v in list(mx) + list(my)):
+            return [sp.Float(float(c)) for c in coeffs]
+        return coeffs
+    design = _DENSE(len(mx), degree + 1, [xi ** k for xi in mx for k in range(degree + 1)])
+    return list(solve_least_squares(design, _DENSE(len(my), 1, my)))
+
+
+def _fit(name: str, x, y, degree: int):
+    mx, my, dx, dy = _paired(name, x, y)
+    coeffs = _fit_coefficients(mx, my, degree)
+    out = []
+    for k, c in enumerate(coeffs):
+        dims = _add_dims(dy, _scale_dims(dx, -k))
+        out.append(smul(c, unit_of(dims)) if dims else c)
+    return wrap(len(out), 1, out)
+
+
+def fit_linear(x, y):
+    mx, _, _, _ = _paired("fit_linear", x, y)
+    if len(mx) < 2:
+        raise StatementError("fit_linear() needs at least 2 points")
+    return _fit("fit_linear", x, y, 1)
+
+
+def fit_poly(x, y, degree):
+    mx, _, _, _ = _paired("fit_poly", x, y)
+    d = _real("fit_poly", degree) if not isinstance(degree, sp.MatrixBase) else None
+    if d is None or d != int(d) or d < 1:
+        raise StatementError("degree must be a positive integer")
+    d = int(d)
+    if len(mx) < d + 1:
+        raise StatementError(f"degree {d} needs at least {d + 1} points, has {len(mx)}")
+    return _fit("fit_poly", x, y, d)
+
+
+def predict(coeffs, x):
+    if not isinstance(coeffs, sp.MatrixBase) or not _is_vector(coeffs):
+        raise StatementError("predict() needs a vector of coefficients")
+    if isinstance(x, sp.MatrixBase):
+        if not _is_vector(x):
+            raise StatementError("predict() needs a scalar or vector x")
+    elif not _is_scalar(x):
+        raise StatementError("predict() needs a scalar or vector x")
+    for e in list(coeffs) + (list(x) if isinstance(x, sp.MatrixBase) else [sp.sympify(x)]):
+        _check_numeric(e)
+
+    def one(xi):
+        total = None
+        for k, c in enumerate(coeffs):
+            term = smul(c, xi ** k) if k else c
+            total = term if total is None else sadd(total, term)
+        return total
+
+    if isinstance(x, sp.MatrixBase):
+        return wrap(x.rows, x.cols, [one(xi) for xi in x])
+    return one(sp.sympify(x))
+
+
+def r_squared(coeffs, x, y):
+    _, fy, dy = _vector("r_squared", y)
+    _, fx, _ = _vector("r_squared", x)
+    if len(fx) != len(fy):
+        raise StatementError(f"Vectors must have the same length ({len(fx)} and {len(fy)})")
+    pred = predict(coeffs, x if isinstance(x, sp.MatrixBase) else wrap(1, 1, [x]))
+    my, _ = split_units(_DENSE(len(fy), 1, _vector("r_squared", y)[0]))
+    mp, dp = split_units(_DENSE(len(fy), 1, list(pred)))
+    if dp != dy and any(e != 0 for e in mp):
+        raise UnitError("Units do not match")
+    if len(set(fy)) == 1:
+        raise StatementError("r_squared() is undefined when y is constant")
+    ys, ps = [float(e) for e in my], [float(e) for e in mp]
+    mean_y = sum(ys) / len(ys)
+    ss_res = sum((a - b) ** 2 for a, b in zip(ys, ps))
+    ss_tot = sum((a - mean_y) ** 2 for a in ys)
+    return sp.Float(1.0 - ss_res / ss_tot)
+
+
 STATS_BUILTINS = {
     "mean": mean, "median": median, "mode": mode,
     "variance": variance, "stdev": stdev,
@@ -371,4 +515,5 @@ STATS_BUILTINS = {
     "binomial_quantile": binomial_quantile, "binomial_sample": binomial_sample,
     "poisson_pmf": poisson_pmf, "poisson_cdf": poisson_cdf,
     "poisson_quantile": poisson_quantile, "poisson_sample": poisson_sample,
+    "fit_linear": fit_linear, "fit_poly": fit_poly, "predict": predict, "r_squared": r_squared,
 }
