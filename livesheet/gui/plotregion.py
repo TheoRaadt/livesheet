@@ -194,7 +194,10 @@ class PlotRegion(Region):
 
     # -- opening the dialog or the raw editor ---------------------------------------------
 
-    def mouseDoubleClickEvent(self, event) -> None:
+    def is_hot_spot(self, local_pos: QPointF) -> bool:
+        return self.handle_rect().contains(local_pos)
+
+    def on_double_click(self, scene_pos: QPointF) -> None:
         from .plotdialog import PlotDialog, decompose_plot_text
 
         if decompose_plot_text(self.source) is not None:
@@ -202,9 +205,8 @@ class PlotRegion(Region):
             parent = scene.views()[0] if scene and scene.views() else None
             dialog = PlotDialog(self, scene, parent=parent)
             dialog.exec()
-            event.accept()
             return
-        super().mouseDoubleClickEvent(event)
+        super().on_double_click(scene_pos)
 
     # -- resizing ---------------------------------------------------------------------
 

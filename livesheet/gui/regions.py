@@ -26,6 +26,7 @@ from .pretty import display_source, pretty_source_html
 
 GRID = 10
 PAD = 3
+GRIP = 3   # extra hit width outside the padding while editing (spec 023)
 
 MATH_FONT = QFont()
 MATH_FONT.setFamilies(["Cambria Math", "STIX Two Text", "Times New Roman", "serif"])
@@ -65,7 +66,8 @@ class _Editor(QGraphicsTextItem):
 
 
 class Region(QGraphicsObject):
-    """Base class: a movable, selectable block containing an editor."""
+    """Base class: a selectable block containing an editor. Moving is driven by the Worksheet
+    (spec 023: threshold, group move, Esc-cancel); ``setPos`` still snaps and clamps."""
 
     kind = "base"
     contentChanged = Signal()
@@ -75,8 +77,7 @@ class Region(QGraphicsObject):
     def __init__(self, text: str = ""):
         super().__init__()
         self.setFlags(
-            QGraphicsItem.GraphicsItemFlag.ItemIsMovable
-            | QGraphicsItem.GraphicsItemFlag.ItemIsSelectable
+            QGraphicsItem.GraphicsItemFlag.ItemIsSelectable
             | QGraphicsItem.GraphicsItemFlag.ItemSendsGeometryChanges
         )
         self.editor = _Editor(self)
@@ -85,20 +86,31 @@ class Region(QGraphicsObject):
         self.editing = False
         self._has_error = False
         self.editor.document().contentsChanged.connect(self._on_contents_changed)
+        self.setAcceptHoverEvents(True)
 
     # -- geometry / painting ------------------------------------------------
 
     def content_rect(self) -> QRectF:
         return self.editor.mapRectToParent(self.editor.boundingRect())
 
-    def boundingRect(self) -> QRectF:
+    def _frame_rect(self) -> QRectF:
         r = self.childrenBoundingRect()
         return r.adjusted(-PAD, -PAD, PAD, PAD) | QRectF(0, 0, 2 * PAD + 8, 2 * PAD + 8)
+
+    def boundingRect(self) -> QRectF:
+        # While editing, the hit area is widened by GRIP so the frame ring (padding + GRIP) is a
+        # move grip (spec 023); the drawn frame and saved layout are unaffected.
+        r = self._frame_rect()
+        return r.adjusted(-GRIP, -GRIP, GRIP, GRIP) if self.editing else r
+
+    def in_grip(self, local_pos: QPointF) -> bool:
+        """True for a point on an editing region that is not inside the text area."""
+        return self.editing and not self.content_rect().contains(local_pos)
 
     def paint(self, painter: QPainter, option: QStyleOptionGraphicsItem, widget=None) -> None:
         if self.scene() is None:
             return
-        rect = self.boundingRect().adjusted(0.5, 0.5, -0.5, -0.5)
+        rect = self._frame_rect().adjusted(0.5, 0.5, -0.5, -0.5)
         if self.editing:
             painter.fillRect(rect, COLOR_EDIT_BG)
         elif self._has_error:
@@ -118,7 +130,10 @@ class Region(QGraphicsObject):
     def start_editing(self, scene_pos: QPointF | None = None) -> None:
         if self.editing:
             return
+        self.prepareGeometryChange()
         self.editing = True
+        self.setCursor(Qt.CursorShape.OpenHandCursor)
+        self.editor.setCursor(Qt.CursorShape.IBeamCursor)
         self._enter_edit_display()
         self.editor.setAcceptedMouseButtons(Qt.MouseButton.AllButtons)
         self.editor.setTextInteractionFlags(Qt.TextInteractionFlag.TextEditorInteraction)
@@ -136,7 +151,10 @@ class Region(QGraphicsObject):
     def finish_editing(self, move_below: bool = False) -> None:
         if not self.editing:
             return
+        self.prepareGeometryChange()
         self.editing = False
+        self.editor.unsetCursor()
+        self.unsetCursor()
         self.editor.setTextInteractionFlags(Qt.TextInteractionFlag.NoTextInteraction)
         self.editor.setAcceptedMouseButtons(Qt.MouseButton.NoButton)
         cursor = self.editor.textCursor()
@@ -150,7 +168,10 @@ class Region(QGraphicsObject):
         """Leave edit mode without emitting signals (used right before the region is discarded)."""
         if not self.editing:
             return
+        self.prepareGeometryChange()
         self.editing = False
+        self.editor.unsetCursor()
+        self.unsetCursor()
         self.editor.clearFocus()
         self.editor.setTextInteractionFlags(Qt.TextInteractionFlag.NoTextInteraction)
         self.editor.setAcceptedMouseButtons(Qt.MouseButton.NoButton)
@@ -158,12 +179,42 @@ class Region(QGraphicsObject):
     def handle_key(self, event: QKeyEvent) -> bool:
         """Return True when the key was handled here."""
         if event.key() == Qt.Key.Key_Escape:
+            scene = self.scene()
+            if scene is not None and getattr(scene, "cancel_move", None) and scene.cancel_move():
+                return True   # Esc during a drag cancels the drag, not the editing
             self.editor.clearFocus()
             return True
         return False
 
     def mouseDoubleClickEvent(self, event) -> None:
-        self.start_editing(event.scenePos())
+        scene = self.scene()
+        if scene is not None and getattr(scene, "move_active", None) and scene.move_active():
+            event.accept()   # the Worksheet runs on_double_click on release if it was no drag
+            return
+        self.on_double_click(event.scenePos())
+
+    def on_double_click(self, scene_pos: QPointF) -> None:
+        """Double-click action; the Worksheet defers it to button release so that a click
+        followed quickly by a press-and-drag moves the region instead (spec 023)."""
+        self.start_editing(scene_pos)
+
+    def update_cursor(self, local_pos: QPointF) -> None:
+        """Open hand on a movable body / the editing grip; default over special hot spots."""
+        if self.editing or not self.is_hot_spot(local_pos):
+            self.setCursor(Qt.CursorShape.OpenHandCursor)
+        else:
+            self.unsetCursor()
+
+    def is_hot_spot(self, local_pos: QPointF) -> bool:
+        return False
+
+    def hoverEnterEvent(self, event) -> None:
+        self.update_cursor(event.pos())
+        super().hoverEnterEvent(event)
+
+    def hoverMoveEvent(self, event) -> None:
+        self.update_cursor(event.pos())
+        super().hoverMoveEvent(event)
 
     def _on_contents_changed(self) -> None:
         if self.editing:
@@ -396,6 +447,12 @@ class ComponentRegion(Region):
 
     def mouseDoubleClickEvent(self, event) -> None:
         event.accept()   # swallow the generic "start inline edit" double-click
+
+    def on_double_click(self, scene_pos: QPointF) -> None:
+        pass
+
+    def is_hot_spot(self, local_pos: QPointF) -> bool:
+        return self.port_at(local_pos) is not None
 
     # -- configuration / layout -----------------------------------------------------------
 

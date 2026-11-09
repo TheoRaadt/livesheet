@@ -6,8 +6,10 @@ import math
 import time
 
 import shiboken6
+from dataclasses import dataclass, field
+
 from PySide6.QtCore import QPointF, QRectF, Qt, QTimer, Signal
-from PySide6.QtGui import QColor, QKeyEvent, QPainter, QPainterPath, QPen, QPolygonF, QWheelEvent
+from PySide6.QtGui import QColor, QFont, QKeyEvent, QPainter, QPainterPath, QPen, QPolygonF, QWheelEvent
 from PySide6.QtWidgets import (
     QDialog,
     QGraphicsItem,
@@ -27,6 +29,26 @@ from .regions import COLOR_ERROR, COLOR_FRAME, GRID, ComponentRegion, MathRegion
 MIN_HEIGHT = 1100
 RECALC_DELAY_MS = 200
 HINT_TEXT = "Click to place the cursor, then start typing"
+
+
+DRAG_THRESHOLD_PX = 4      # view pixels before a press becomes a drag (spec 023)
+SHIFT_NUDGE_CELLS = 5      # Shift+arrow moves this many grid cells
+EDGE_SCROLL_PX = 24
+EDGE_SCROLL_STEP = 20      # view pixels scrolled per mouse event near an edge
+
+
+@dataclass
+class _MoveSession:
+    """State of one press-drag-release move gesture (spec 023)."""
+    primary: Region
+    starts: dict          # Region -> start QPointF
+    press_scene: QPointF
+    press_screen: QPointF
+    modified_before: bool
+    dbl_pending: bool = False   # press was a double-click event: edit on release if not dragged
+    started: bool = False
+    cancelled: bool = False
+    last_delta: tuple = field(default=(0.0, 0.0))
 
 
 class Crosshair(QGraphicsItem):
@@ -100,6 +122,28 @@ class WireItem(QGraphicsPathItem):
         painter.drawPolygon(QPolygonF([end, left, right]))
 
 
+def heading_text(region: TextRegion) -> str | None:
+    """Whitespace-collapsed plain text of the first paragraph when it is non-empty and entirely
+    bold, else None (spec 027). Never raises on odd content."""
+    try:
+        block = region.editor.document().firstBlock()
+        if not block.isValid():
+            return None
+        parts: list[str] = []
+        it = block.begin()
+        while not it.atEnd():
+            frag = it.fragment()
+            if frag.isValid() and frag.text():
+                if frag.charFormat().fontWeight() < QFont.Weight.DemiBold:
+                    return None
+                parts.append(frag.text())
+            it += 1
+        text = " ".join("".join(parts).split())
+        return text or None
+    except Exception:
+        return None
+
+
 class PageBreakItem(QGraphicsItem):
     """A manual page-break marker (spec 021, phase B): a full-width rule with a small "Page N"
     label. Not a ``Region`` (no text, never evaluated, not part of ``Worksheet.regions()``).
@@ -142,6 +186,7 @@ class Worksheet(QGraphicsScene):
     modifiedChanged = Signal(bool)
     statusMessage = Signal(str)
     evaluationFinished = Signal(int, int, float)   # errors, total regions, elapsed ms
+    outlineDirty = Signal()   # anything that can change the heading list (spec 027)
 
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -156,6 +201,10 @@ class Worksheet(QGraphicsScene):
         self._wires: list[WireItem] = []     # component-to-component connections (spec 009)
         self._wire_drag: tuple[ComponentRegion, str] | None = None   # drag-to-connect source
         self._wire_drag_item: QGraphicsLineItem | None = None
+        self._move: _MoveSession | None = None   # active drag-to-move gesture (spec 023)
+        self._pressing = False
+        self._scrolling = False
+        self._moving = False                      # suppress per-region _on_moved side effects
         self.printing = False  # suppress grid/page edge while exporting
         self._timer = QTimer(self)
         self._timer.setSingleShot(True)
@@ -210,6 +259,7 @@ class Worksheet(QGraphicsScene):
         self.addItem(marker)
         self._page_markers.append(marker)
         self._renumber_markers()
+        self.outlineDirty.emit()
         return marker
 
     def _clear_markers(self) -> None:
@@ -217,6 +267,40 @@ class Worksheet(QGraphicsScene):
             if m.scene() is self:
                 self.removeItem(m)
         self._page_markers = []
+        self.outlineDirty.emit()
+
+    def headings(self) -> list[tuple[Region, int, str]]:
+        """Heading text regions as (region, 0-based page index, plain first line), in reading
+        order: page, then top to bottom, then left to right (spec 027). Read-only."""
+        breaks = self.page_break_ys()
+        found = []
+        for r in self.regions():
+            if not isinstance(r, TextRegion):
+                continue
+            text = heading_text(r)
+            if text is None:
+                continue
+            y = r.pos().y()
+            page = sum(1 for b in breaks if b <= y)
+            found.append(((page, y, r.pos().x(), getattr(r, "_seq", 0)), (r, page, text)))
+        found.sort(key=lambda t: t[0])
+        return [t[1] for t in found]
+
+    def reveal_region(self, region: Region) -> bool:
+        """Select ``region`` and scroll so it sits near the top of the view (zoom unchanged,
+        focus untouched). False for a region no longer in the sheet."""
+        if not shiboken6.isValid(region) or region.scene() is not self:
+            return False
+        self.clearSelection()
+        region.setSelected(True)
+        rect = region.sceneBoundingRect()
+        for view in self.views():
+            view.ensureVisible(rect, 20, 20)
+            top = view.mapFromScene(rect.topLeft()).y()
+            target = int(view.viewport().height() * 0.1)
+            vbar = view.verticalScrollBar()
+            vbar.setValue(vbar.value() + top - target)
+        return True
 
     def remove_page_breaks(self, markers: list[PageBreakItem]) -> None:
         """Delete markers only; regions do not move back (spec 021)."""
@@ -229,6 +313,7 @@ class Worksheet(QGraphicsScene):
                 self.removeItem(m)
         if removed:
             self._renumber_markers()
+            self.outlineDirty.emit()
             self.set_modified()
             self.recalculate()
 
@@ -308,6 +393,7 @@ class Worksheet(QGraphicsScene):
         region.editingFinished.connect(self._on_editing_finished)
         region.moved.connect(self._on_moved)
         self._update_rect()
+        self.outlineDirty.emit()
         return region
 
     def insert_region(self, kind: str, initial_text: str = "") -> Region:
@@ -535,6 +621,7 @@ class Worksheet(QGraphicsScene):
                     self.statusMessage.emit(msg)
 
     def remove_regions(self, regions: list[Region]) -> None:
+        self._drop_move()
         if not regions:
             return
         for r in regions:
@@ -571,6 +658,7 @@ class Worksheet(QGraphicsScene):
         self.removeItem(region)
         self._discarded.append(region)
         QTimer.singleShot(0, self._destroy_discarded)
+        self.outlineDirty.emit()
 
     def _destroy_discarded(self) -> None:
         discarded, self._discarded = self._discarded, []
@@ -579,6 +667,7 @@ class Worksheet(QGraphicsScene):
                 shiboken6.delete(region)
 
     def clear_sheet(self) -> None:
+        self._drop_move()
         for w in list(self._wires):
             if w.scene() is self:
                 self.removeItem(w)
@@ -611,6 +700,7 @@ class Worksheet(QGraphicsScene):
                              page_breaks=self.page_break_ys())
 
     def load_document(self, doc: SheetDocument) -> None:
+        self._drop_move()
         self.clear_sheet()
         for b in sorted(doc.page_breaks):
             self._add_marker(b)
@@ -687,10 +777,14 @@ class Worksheet(QGraphicsScene):
     # -- events ------------------------------------------------------------------
 
     def _on_content_changed(self) -> None:
+        self.outlineDirty.emit()
         self.set_modified()
         self.schedule_recalc()
 
     def _on_moved(self) -> None:
+        if self._moving:
+            return   # batched: the mover calls _after_move once per step (spec 023)
+        self.outlineDirty.emit()
         self.set_modified()
         self.schedule_recalc()
         self._update_rect()
@@ -787,15 +881,220 @@ class Worksheet(QGraphicsScene):
             self.crosshair.show()
             event.ignore()  # let the view start a rubber-band selection
             return
-        if region is not None and not region.editing:
-            editing = self.editing_region()
-            if editing is not None and editing is not region:
-                editing.finish_editing()
+        if region is not None and event.button() == Qt.MouseButton.LeftButton:
+            self._press_on_region(region, event)
+            return
         super().mousePressEvent(event)
+
+    def mouseDoubleClickEvent(self, event) -> None:
+        """A press arriving as a double-click event (click, then quickly press-and-drag) must
+        still be able to start a move; the "edit" action is deferred to release (spec 023)."""
+        item = self.itemAt(event.scenePos(), self.views()[0].transform() if self.views() else self._identity())
+        region = self._region_of(item)
+        if (region is not None and not region.editing and event.button() == Qt.MouseButton.LeftButton
+                and self.editing_region() is None):
+            self._press_on_region(region, event, dbl=True)
+            return
+        super().mouseDoubleClickEvent(event)
+
+    # -- drag to move (spec 023) --------------------------------------------------
+
+    def move_active(self) -> bool:
+        return self._move is not None or self._pressing
+
+    def _press_on_region(self, region: Region, event, dbl: bool = False) -> None:
+        editing = self.editing_region()
+        if editing is not None and editing is not region:
+            editing.finish_editing()
+        local = region.mapFromScene(event.scenePos())
+        if region.editing:
+            if not region.in_grip(local):
+                super().mousePressEvent(event)   # caret / text selection, never a move
+                return
+            # Frame ring of an editing region: move grip; keep editing and focus untouched.
+            if not region.isSelected():
+                self.clearSelection()
+                region.setSelected(True)
+            self._begin_move(region, event, dbl)
+            event.accept()
+            return
+        self._pressing = True   # a double-click-typed press must not reach on_double_click
+        try:
+            super().mousePressEvent(event)
+        finally:
+            self._pressing = False
+        if getattr(region, "_resizing", None) is not None or not region.isSelected():
+            return   # plot resize handle (or a toggled-off selection) wins over moving
+        self._begin_move(region, event, dbl)
+
+    def _begin_move(self, region: Region, event, dbl: bool) -> None:
+        members = [it for it in self.selectedItems() if isinstance(it, Region)]
+        if region not in members:
+            members.append(region)
+        self._move = _MoveSession(
+            primary=region, starts={r: QPointF(r.pos()) for r in members},
+            press_scene=QPointF(event.scenePos()), press_screen=QPointF(event.screenPos()),
+            modified_before=self._modified, dbl_pending=dbl)
+
+    def _drop_move(self) -> None:
+        if self._move is not None:
+            self._move = None
+            self._set_drag_cursor(False)
+
+    def _set_drag_cursor(self, on: bool) -> None:
+        for v in self.views():
+            if on:
+                v.viewport().setCursor(Qt.CursorShape.ClosedHandCursor)
+            else:
+                v.viewport().unsetCursor()
+
+    def clamped_delta(self, starts: list[QPointF], dx: float, dy: float) -> tuple[float, float]:
+        """Reduce a displacement so no member ends at x < 0 or y < 0 (the group clamps as a whole)."""
+        if starts:
+            dx = max(dx, -min(p.x() for p in starts))
+            dy = max(dy, -min(p.y() for p in starts))
+        return dx, dy
+
+    def _drag_step(self, event) -> None:
+        m = self._move
+        if m is None or m.cancelled:
+            return
+        if not m.started:
+            d = QPointF(event.screenPos()) - m.press_screen
+            if math.hypot(d.x(), d.y()) < DRAG_THRESHOLD_PX:
+                return
+            m.started = True
+            self._set_drag_cursor(True)
+        start = m.starts[m.primary]
+        delta = event.scenePos() - m.press_scene
+        dx = snap(start.x() + delta.x()) - start.x()
+        dy = snap(start.y() + delta.y()) - start.y()
+        dx, dy = self.clamped_delta(list(m.starts.values()), dx, dy)
+        changed = False
+        self._moving = True
+        try:
+            for r, p in m.starts.items():
+                target = QPointF(p.x() + dx, p.y() + dy)
+                if r.pos() != target:
+                    r.setPos(target)
+                    changed = True
+        finally:
+            self._moving = False
+        m.last_delta = (dx, dy)
+        if changed:
+            self._after_move()
+        self._keep_visible(event)
+
+    def _keep_visible(self, event) -> None:
+        """Scroll the view a little each step while the pointer is within EDGE_SCROLL_PX of (or
+        beyond) a viewport edge, so the dragged region stays reachable. Bounded per event."""
+        if EDGE_SCROLL_STEP <= 0:
+            return
+        self._scrolling = True   # the view replays the last mouse move after a scroll; ignore it
+        try:
+            self._scroll_views(event)
+        finally:
+            self._scrolling = False
+
+    def _scroll_views(self, event) -> None:
+        for v in self.views():
+            p = v.mapFromScene(event.scenePos())
+            r = v.viewport().rect()
+            hbar, vbar = v.horizontalScrollBar(), v.verticalScrollBar()
+            if p.x() < EDGE_SCROLL_PX:
+                hbar.setValue(hbar.value() - EDGE_SCROLL_STEP)
+            elif p.x() > r.width() - EDGE_SCROLL_PX:
+                hbar.setValue(hbar.value() + EDGE_SCROLL_STEP)
+            if p.y() < EDGE_SCROLL_PX:
+                vbar.setValue(vbar.value() - EDGE_SCROLL_STEP)
+            elif p.y() > r.height() - EDGE_SCROLL_PX:
+                vbar.setValue(vbar.value() + EDGE_SCROLL_STEP)
+
+    def _after_move(self) -> None:
+        """Side effects of region movement, batched: once per mouse step or key press."""
+        self.outlineDirty.emit()
+        self.schedule_recalc()
+        self._update_rect()
+        self._sync_all_wires()
+
+    def _finish_move(self, event) -> None:
+        m, self._move = self._move, None
+        self._set_drag_cursor(False)
+        if m is None or m.cancelled:
+            return
+        if not m.started:
+            if m.dbl_pending and not m.primary.editing and m.primary.scene() is self:
+                m.primary.on_double_click(event.scenePos())
+            return
+        moves = [(r, p, QPointF(r.pos())) for r, p in m.starts.items() if r.pos() != p]
+        if moves:
+            self.move_regions(moves)
+        else:
+            self.recalculate()
+        pos = m.primary.mapFromScene(event.scenePos())
+        if m.primary.scene() is self:
+            m.primary.update_cursor(pos)
+
+    def cancel_move(self) -> bool:
+        """Esc during a drag: put everything back. Returns True if a drag was in progress."""
+        m = self._move
+        if m is None or m.cancelled or not m.started:
+            return False
+        m.cancelled = True
+        self._moving = True
+        try:
+            for r, p in m.starts.items():
+                r.setPos(p)
+        finally:
+            self._moving = False
+        self._set_drag_cursor(False)
+        self._update_rect()
+        self.set_modified(m.modified_before)
+        self.recalculate()
+        return True
+
+    def move_regions(self, moves: list, immediate: bool = True) -> None:
+        """Commit a move: ``moves`` is a list of (region, old_pos, new_pos). The single entry
+        point for completed drags and nudges, so a future undo can wrap one call as one step."""
+        self._moving = True
+        try:
+            for r, _old, new in moves:
+                if r.pos() != new:
+                    r.setPos(new)
+        finally:
+            self._moving = False
+        if any(old != new for _r, old, new in moves):
+            self.set_modified()
+        self._update_rect()
+        self._sync_all_wires()
+        if immediate:
+            self.recalculate()
+        else:
+            self.schedule_recalc()
+
+    def nudge(self, selected: list[Region], dx: float, dy: float) -> None:
+        starts = [r.pos() for r in selected]
+        if any(p.x() + dx < 0 for p in starts):
+            dx = 0.0
+        if any(p.y() + dy < 0 for p in starts):
+            dy = 0.0
+        if dx == 0.0 and dy == 0.0:
+            return
+        self.move_regions([(r, QPointF(r.pos()), QPointF(r.pos().x() + dx, r.pos().y() + dy))
+                           for r in selected], immediate=False)
+
+    def focusOutEvent(self, event) -> None:
+        self.cancel_move()   # losing the window focus mid-drag counts as Esc
+        super().focusOutEvent(event)
 
     def mouseMoveEvent(self, event) -> None:
         if self._wire_drag is not None:
             self._update_wire_drag(event.scenePos())
+            event.accept()
+            return
+        if self._move is not None:
+            if not self._scrolling:
+                self._drag_step(event)
             event.accept()
             return
         super().mouseMoveEvent(event)
@@ -805,9 +1104,17 @@ class Worksheet(QGraphicsScene):
             self._finish_wire_drag(event.scenePos())
             event.accept()
             return
+        if self._move is not None and event.button() == Qt.MouseButton.LeftButton:
+            super().mouseReleaseEvent(event)   # lets the scene drop its mouse grabber
+            self._finish_move(event)
+            event.accept()
+            return
         super().mouseReleaseEvent(event)
 
     def keyPressEvent(self, event: QKeyEvent) -> None:
+        if event.key() == Qt.Key.Key_Escape and self.cancel_move():
+            event.accept()
+            return
         if self.editing_region() is not None:
             super().keyPressEvent(event)
             return
@@ -834,9 +1141,10 @@ class Worksheet(QGraphicsScene):
         step = {Qt.Key.Key_Left: (-GRID, 0), Qt.Key.Key_Right: (GRID, 0),
                 Qt.Key.Key_Up: (0, -GRID), Qt.Key.Key_Down: (0, GRID)}.get(key)
         if step:
+            if event.modifiers() & Qt.KeyboardModifier.ShiftModifier:
+                step = (step[0] * SHIFT_NUDGE_CELLS, step[1] * SHIFT_NUDGE_CELLS)
             if selected:
-                for r in selected:
-                    r.moveBy(*step)
+                self.nudge(selected, *step)
             else:
                 p = self.crosshair.pos() + QPointF(*step)
                 self.crosshair.setPos(max(0.0, p.x()), max(0.0, p.y()))
