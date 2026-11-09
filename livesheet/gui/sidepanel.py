@@ -14,7 +14,7 @@ from __future__ import annotations
 
 from typing import Callable
 
-from PySide6.QtCore import Qt, Signal
+from PySide6.QtCore import QTimer, Qt, Signal
 from PySide6.QtGui import QAction
 from PySide6.QtWidgets import (
     QLabel,
@@ -154,7 +154,107 @@ _CHEM_TOKENS: list[tuple[str, str, str, str]] = [
     (_KIN, "conversion", "X_A := (C_A0 - C_A) / C_A0", "Fractional conversion of a reactant"),
 ]
 
-MATH_TOKENS.extend(_MECH_TOKENS + _ELEC_TOKENS + _CHEM_TOKENS)
+_SUM = "Summary statistics"
+_DIST = "Distributions"
+_TESTS = "Hypothesis tests"
+_REG = "Regression"
+_UNLESS = "Plain numbers only, no units."
+_WHOLE = " k is a whole number of 0 or more."
+_STAT_TOKENS: list[tuple[str, str, str, str]] = [
+    (_SUM, "mean", "mean(v)", "Average of a list. Keeps the list's unit."),
+    (_SUM, "median", "median(v)", "Middle value of a list."),
+    (_SUM, "mode", "mode(v)", "Most frequent value; ties give the smallest."),
+    (_SUM, "variance", "variance(v)", "Sample variance (divides by n-1). Unit squared."),
+    (_SUM, "stdev", "stdev(v)", "Sample standard deviation (divides by n-1)."),
+    (_SUM, "population_variance", "population_variance(v)",
+     "Variance treating the list as the whole population (divides by n)."),
+    (_SUM, "population_stdev", "population_stdev(v)",
+     "Standard deviation of a whole population (divides by n)."),
+    (_SUM, "quantile", "quantile(v, p)",
+     "Value a fraction p (0 to 1) of the way through the sorted data."),
+    (_SUM, "covariance", "covariance(u, w)", "Sample covariance of two equal-length lists."),
+    (_SUM, "correlation", "correlation(u, w)",
+     "Correlation of two equal-length lists, between -1 and 1. No unit."),
+]
+
+
+def _dist_rows(fam: str, pdf: str, pdf_args: str, cdf_args: str, q_args: str, s_args: str,
+               discrete: bool) -> list[tuple[str, str, str, str]]:
+    extra = _WHOLE if discrete else ""
+    dens = "mass" if discrete else "density"
+    return [
+        (_DIST, f"{fam}_{pdf}", f"{fam}_{pdf}({pdf_args})",
+         f"Probability {dens}: how likely a value is. {_UNLESS}{extra}"),
+        (_DIST, f"{fam}_cdf", f"{fam}_cdf({cdf_args})",
+         f"Cumulative: chance of being at or below the value. {_UNLESS}{extra}"),
+        (_DIST, f"{fam}_quantile", f"{fam}_quantile({q_args})",
+         f"Value below which the chance p lies (inverse of the cumulative). {_UNLESS}"),
+        (_DIST, f"{fam}_sample", f"{fam}_sample({s_args})",
+         f"Column vector of n reproducible random draws; seed is required. {_UNLESS}"),
+    ]
+
+
+_STAT_TOKENS += (
+    _dist_rows("normal", "pdf", "x, mu, sigma", "x, mu, sigma", "p, mu, sigma",
+               "mu, sigma, n, seed", False)
+    + _dist_rows("uniform", "pdf", "x, a, b", "x, a, b", "p, a, b", "a, b, n, seed", False)
+    + _dist_rows("binomial", "pmf", "k, n_trials, p", "k, n_trials, p", "q, n_trials, p",
+                 "n_trials, p, n, seed", True)
+    + _dist_rows("poisson", "pmf", "k, lambda_", "k, lambda_", "q, lambda_",
+                 "lambda_, n, seed", True)
+)
+
+_STAT_TOKENS += [
+    (_TESTS, "sample", "sample v in t1",
+     "A measurement list for test t1. One line for a one-sample or chi-square test, two lines for "
+     "a two-sample (Welch) test. Use the same name (t1) on every line of the test; rename it "
+     "consistently."),
+    (_TESTS, "expected", "expected counts in t1",
+     "Expected counts (chi-square test only); must be positive, same length as the sample."),
+    (_TESTS, "claim mean", "claim mean == 0 in t1",
+     "One-sample t-test: the average equals this value (also < and > for one-sided)."),
+    (_TESTS, "claim two means", "claim mean1 == mean2 in t1",
+     "Welch two-sample t-test between the first and second sample line (also < and >)."),
+    (_TESTS, "claim fits", "claim fits in t1",
+     "Chi-square fit of the sample counts to the expected counts."),
+    (_TESTS, "level", "level 0.05 in t1", "Significance level; optional, default 0.05."),
+    (_TESTS, "verdict", "verdict in t1",
+     "Runs test t1 from the lines above it; shows reject / fail to reject H0 and defines "
+     "t1_statistic, t1_df, t1_pvalue. Use the same name as the sample lines."),
+    (_REG, "fit_linear", "fit_linear(x, y)",
+     "Best straight line through paired data; gives [intercept; slope]."),
+    (_REG, "fit_poly", "fit_poly(x, y, 2)",
+     "Best polynomial of the given degree (1 or more, less than the number of points); constant "
+     "term first."),
+    (_REG, "predict", "predict(c, x)", "Fitted value(s) at x for a coefficient vector c."),
+    (_REG, "r_squared", "r_squared(c, x, y)",
+     "How well the fit follows the data (1 is perfect)."),
+]
+
+_UNK = "Unknowns and constraints"
+_SET = "Settings (optional)"
+_RES = "Results"
+_OPT_TOKENS: list[tuple[str, str, str, str]] = [
+    (_UNK, "vary", "vary x from 1 in m1",
+     "Declares unknowns and starting guesses (the guess's unit fixes the unknown's unit); several, "
+     "comma separated."),
+    (_UNK, "equation ==", "x^2 == 4 in m1", "An equation the solution must satisfy."),
+    (_UNK, "limit <=", "x <= 10 in m1", "An upper limit; also usable as a <= x <= b."),
+    (_UNK, "limit >=", "x >= 0 in m1", "A lower limit."),
+    (_SET, "accuracy", "accuracy 1e-8 in m1", "Relative tolerance; default 1e-8."),
+    (_SET, "steps", "steps 200 in m1", "Iteration limit; default 200."),
+    (_RES, "settle", "settle in m1",
+     "Solves the equations/limits from the guess; binds the unknowns. The starting guess is part "
+     "of the problem; only a local solution is found."),
+    (_RES, "least", "least x^2 in m1",
+     "Smallest value of the expression while all constraints hold. The starting guess is part of "
+     "the problem; only a local optimum is found."),
+    (_RES, "most", "most x in m1",
+     "Largest value of the expression while all constraints hold. The starting guess is part of "
+     "the problem; only a local optimum is found."),
+]
+
+MATH_TOKENS.extend(_MECH_TOKENS + _ELEC_TOKENS + _CHEM_TOKENS + _STAT_TOKENS + _OPT_TOKENS)
 
 # Each functional tab's MATH_TOKENS categories, in display order; a tab listing more than one
 # category keeps sub-headers (today, only Elements bundles three originally distinct groups).
@@ -162,22 +262,27 @@ TAB_CATEGORIES: dict[str, tuple[str, ...]] = {
     "Elements": ("Statements", "Constants", "Greek letters"),
     "Algebra": ("Algebra",),
     "Calculus": ("Calculus",),
+    "Statistics": (_SUM, _DIST, _TESTS, _REG),
+    "Optimization": (_UNK, _SET, _RES),
     "Mechanical": ("Statics", "Strength of Materials"),
     "Electrical": ("DC Circuits", "Power"),
     "Chemical": (_STOI, _GAS, _BAL, _TRANS, _KIN),
 }
 
-STATISTICS_PLACEHOLDER = ("Statistical tools (descriptive statistics, distributions, hypothesis "
-                          "tests, regression) will appear here once available.")
-OPTIMIZATION_PLACEHOLDER = ("Optimization tools (nonlinear and constrained optimization) will "
-                            "appear here once available.")
-OUTLINE_PLACEHOLDER = "Document outline will appear here once headings are available."
+OUTLINE_EMPTY = ("No headings yet. Make the first line of a text region bold (Ctrl+B) "
+                 "to list it here.")
+OUTLINE_PLACEHOLDER = OUTLINE_EMPTY   # old name, kept for importers (spec 027)
+OUTLINE_LABEL_MAX = 32
+OUTLINE_DEBOUNCE_MS = 300
+_BUTTON_STYLE = (
+    "QPushButton { border: 1px solid rgba(128, 128, 128, 110);"
+    " border-radius: 4px; padding: 3px 6px; }"
+    "QPushButton:hover { border-color: rgba(128, 128, 128, 180); }"
+)
+_HEADER_STYLE = "color: #7a7a7a; font-weight: bold; font-size: 11px;"
 DATA_PLACEHOLDER = "Imported datasets will appear here once available."
 
 PLACEHOLDER_TABS: dict[str, str] = {
-    "Statistics": STATISTICS_PLACEHOLDER,
-    "Optimization": OPTIMIZATION_PLACEHOLDER,
-    "Outline": OUTLINE_PLACEHOLDER,
     "Data": DATA_PLACEHOLDER,
 }
 
@@ -230,6 +335,13 @@ class SidePanel(QWidget):
         self.setObjectName("side-panel")
         self._insert_token = insert_token
         self.symbol_buttons: dict[str, QPushButton] = {}
+        self.outline_buttons: list[QPushButton] = []
+        self._sheet = None
+        self._view = None
+        self._outline_timer = QTimer(self)
+        self._outline_timer.setSingleShot(True)
+        self._outline_timer.setInterval(OUTLINE_DEBOUNCE_MS)
+        self._outline_timer.timeout.connect(self._rebuild_if_selected)
 
         self.tabs = _TabModel()
         self.tabs.setObjectName("side-panel-tabs")
@@ -237,6 +349,9 @@ class SidePanel(QWidget):
         for name in TAB_ORDER:
             if name in TAB_CATEGORIES:
                 self.tabs.addTab(self._build_functional_tab(TAB_CATEGORIES[name]), name)
+            elif name == "Outline":
+                self._outline_scroll = self._new_outline_scroll(self._outline_message())
+                self.tabs.addTab(self._outline_scroll, name)
             else:
                 self.tabs.addTab(_build_placeholder_tab(PLACEHOLDER_TABS[name]), name)
 
@@ -264,6 +379,7 @@ class SidePanel(QWidget):
         self.strip.tabRequested.connect(self.tabs.setCurrentIndex)
         self.tabs.currentChanged.connect(self.strip.set_current)
         self.tabs.structureChanged.connect(self._sync_strip)
+        self.tabs.currentChanged.connect(lambda _i: self._rebuild_if_selected())
         self._sync_strip()
 
     def toggleViewAction(self) -> QAction:
@@ -328,16 +444,12 @@ class SidePanel(QWidget):
             first = True
             if show_headers:
                 header = QLabel(category)
-                header.setStyleSheet("color: #7a7a7a; font-weight: bold; font-size: 11px;")
+                header.setStyleSheet(_HEADER_STYLE)
                 layout.add_widget(header, new_row=True)
                 first = False
             for _category, label, token, tip in items:
                 btn = QPushButton(label)
-                btn.setStyleSheet(
-                    "QPushButton { border: 1px solid rgba(128, 128, 128, 110);"
-                    " border-radius: 4px; padding: 3px 6px; }"
-                    "QPushButton:hover { border-color: rgba(128, 128, 128, 180); }"
-                )
+                btn.setStyleSheet(_BUTTON_STYLE)
                 btn.setToolTip(tip)
                 btn.clicked.connect(lambda _checked=False, t=token: self._insert_token(t))
                 layout.add_widget(btn, new_row=first and layout.count() > 0)
@@ -349,8 +461,86 @@ class SidePanel(QWidget):
         scroll.setWidget(container)
         return scroll
 
+    # -- outline tab (spec 027) -----------------------------------------------------
+
+    @staticmethod
+    def _new_outline_scroll(content: QWidget) -> QScrollArea:
+        scroll = QScrollArea()
+        scroll.setWidgetResizable(True)
+        scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        scroll.setWidget(content)
+        return scroll
+
+    @staticmethod
+    def _outline_message() -> QWidget:
+        box = QWidget()
+        lay = QVBoxLayout(box)
+        label = QLabel(OUTLINE_EMPTY)
+        label.setObjectName("outline-empty")
+        label.setWordWrap(True)
+        label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        label.setStyleSheet("color: #9a9a9a;")
+        lay.addWidget(label)
+        return box
+
+    def attach_sheet(self, sheet, view) -> None:
+        """Connect the Outline tab to the worksheet and its view."""
+        self._sheet = sheet
+        self._view = view
+        sheet.outlineDirty.connect(self._on_outline_dirty)
+
+    def _outline_selected(self) -> bool:
+        return self.tabs.tabText(self.tabs.currentIndex()) == "Outline"
+
+    def _on_outline_dirty(self) -> None:
+        if self._outline_selected():
+            self._outline_timer.start()
+
+    def _rebuild_if_selected(self) -> None:
+        self._outline_timer.stop()
+        if self._outline_selected() and self._sheet is not None:
+            self.rebuild_outline()
+
+    @staticmethod
+    def _elide(text: str) -> str:
+        if len(text) <= OUTLINE_LABEL_MAX:
+            return text
+        return text[:OUTLINE_LABEL_MAX - 1] + "\u2026"
+
+    def rebuild_outline(self) -> None:
+        """Recompute the heading list from the sheet and replace the Outline page content."""
+        self.outline_buttons = []
+        headings = self._sheet.headings() if self._sheet is not None else []
+        if not headings:
+            content = self._outline_message()
+        else:
+            content = QWidget()
+            layout = FlowLayout(content, margin=6, spacing=4)
+            paged = bool(self._sheet.page_break_ys())
+            last_page = None
+            for region, page, text in headings:
+                if paged and page != last_page:
+                    header = QLabel(f"Page {page + 1}")
+                    header.setStyleSheet(_HEADER_STYLE)
+                    layout.add_widget(header, new_row=True)
+                    last_page = page
+                btn = QPushButton(self._elide(text))
+                btn.setStyleSheet(_BUTTON_STYLE)
+                btn.setFocusPolicy(Qt.FocusPolicy.NoFocus)
+                btn.setToolTip(f"{text}\nPage {page + 1}")
+                btn.setAccessibleName(text)
+                btn.clicked.connect(lambda _c=False, r=region: self._go_to(r))
+                layout.add_widget(btn)
+                self.outline_buttons.append(btn)
+        self._outline_scroll.setWidget(content)
+        self.update_band_height()
+
+    def _go_to(self, region) -> None:
+        if self._sheet is not None:
+            self._sheet.reveal_region(region)   # a stale region is a silent no-op
+
 
 __all__ = [
     "SidePanel", "MATH_TOKENS", "TAB_CATEGORIES", "TAB_ORDER", "PLACEHOLDER_TABS",
-    "OUTLINE_PLACEHOLDER", "DATA_PLACEHOLDER", "STATISTICS_PLACEHOLDER", "OPTIMIZATION_PLACEHOLDER",
+    "OUTLINE_PLACEHOLDER", "DATA_PLACEHOLDER"
 ]

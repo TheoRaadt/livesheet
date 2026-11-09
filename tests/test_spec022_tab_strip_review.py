@@ -366,7 +366,7 @@ def test_c14_band_content():
     _close(w)
 
 
-@pytest.mark.parametrize("k", [3, 4, 8, 9])
+@pytest.mark.parametrize("k", [8, 9])  # spec 026: tabs 3, 4 functional
 def test_c15_placeholder_pages(k):
     w = _win(1000)
     page = w.side_panel.tabs.widget(k)

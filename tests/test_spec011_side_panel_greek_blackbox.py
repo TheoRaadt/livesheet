@@ -357,7 +357,7 @@ def test_criterion5_clicking_d_dx_inserts_diff_open_paren():
 # Criterion 6: Statistics / Optimization placeholders, no interactivity.
 # ---------------------------------------------------------------------------
 
-@pytest.mark.parametrize("tab_name", ["Statistics", "Optimization"])
+@pytest.mark.parametrize("tab_name", ["Outline", "Data"])  # spec 026
 def test_criterion6_placeholder_tabs_have_no_clickable_widgets(tab_name):
     win = _make_window()
     tabs = _tab_widget(win)

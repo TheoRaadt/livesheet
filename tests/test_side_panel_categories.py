@@ -24,9 +24,7 @@ from livesheet.gui.pretty import pretty_source_html  # noqa: E402
 from livesheet.gui.sidepanel import (  # noqa: E402
     DATA_PLACEHOLDER,
     MATH_TOKENS,
-    OPTIMIZATION_PLACEHOLDER,
     OUTLINE_PLACEHOLDER,
-    STATISTICS_PLACEHOLDER,
     TAB_ORDER,
 )
 
@@ -136,18 +134,17 @@ def test_criterion8_total_clickable_tokens_is_46():
 
 # -- 6 statistics/optimization placeholders, no clickable widgets -------------------------------
 
-def test_criterion6_statistics_and_optimization_tabs_are_placeholder_only():
+def test_criterion6_outline_and_data_tabs_are_placeholder_only():
     win = _win()
     tabs = win.side_panel.tabs
-    for index, message in ((3, STATISTICS_PLACEHOLDER), (4, OPTIMIZATION_PLACEHOLDER)):
+    for index in (8, 9):   # Outline and Data remain placeholders (spec 026)
         widget = tabs.widget(index)
         assert _buttons_of(widget) == []
-        labels = widget.findChildren(QLabel)
-        assert len(labels) == 1 and labels[0].text() == message
+        assert len(widget.findChildren(QLabel)) == 1
     sheet = win.sheet
     sheet.clear_sheet()
     before = len(sheet.regions())
-    tabs.setCurrentIndex(3)
+    tabs.setCurrentIndex(8)
     QApplication.processEvents()
     assert len(sheet.regions()) == before   # switching to the placeholder tab creates nothing
     _close(win)
