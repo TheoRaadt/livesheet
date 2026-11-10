@@ -86,7 +86,7 @@ Switching tabs never takes the keyboard focus away from a region you are editing
   show each group's small grey heading, and each group starts on a new row. Algebra and Calculus
   have no heading.
 - Statistics and Optimization show groups of function and line templates, Outline lists your
-  sheet's headings, and only Data still shows just a short grey message (see below).
+  sheet's headings, and Data lists your imported datasets and their columns.
 - The band stays the same height when you switch tabs, so the canvas does not jump. It gets taller
   or shorter only when you resize the window. It never grows past about four rows of buttons (or a
   quarter of the window's height, if that is larger); a tab with more buttons than that scrolls up
@@ -121,8 +121,10 @@ happens whether you click the button or use one of the keyboard shortcuts descri
   *Settings (optional)* and *Results*. See [Optimization](optimization.md).
 - **Outline** — a list of your sheet's headings; click one to jump to it. See
   [The Outline tab](#the-outline-tab) below.
-- **Data** — still a placeholder that only says "Imported datasets will appear here once
-  available."; it does nothing yet.
+- **Data** — your imported datasets: Import..., Refresh, Rename and Remove buttons, and one button
+  per column (for example `run1_t`) that inserts its variable name. With nothing imported it says
+  "No data yet. Import a CSV file to use its columns in formulas." See
+  [Importing data](data-import.md). The same import is also in **Insert > Data from file...**.
 
 The template buttons put readable stand-in names into the line, for example `mean(v)`. After
 clicking, replace the stand-ins (`v`) with your own names.

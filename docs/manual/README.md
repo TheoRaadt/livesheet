@@ -15,7 +15,7 @@ It grows as features ship; a page only appears here once a feature is finished a
   overflow chevron on narrow windows), the window-wide ten-tab strip that wraps onto more rows
   when narrow, and its button band (Elements, Algebra, Calculus, Statistics, Optimization, the
   formula tabs, the Outline tab that lists bold headings and jumps to them, and the Data
-  placeholder), keyboard use, typing Greek letters and
+  tab for imported datasets), keyboard use, typing Greek letters and
   subscripts, the status bar, and switching between a light, dark or system-following appearance.
 - [Vectors and matrices](matrices.md) — building a vector or matrix with the Matrix dialog instead
   of typing brackets by hand, and editing one you already have.
@@ -50,5 +50,9 @@ It grows as features ship; a page only appears here once a feature is finished a
 - [Autocomplete](autocomplete.md) - the name list that opens after two typed letters in a math
   region (built-in functions, constants and your own names, with call hints), Down/Up to move, Tab
   to accept, Esc to dismiss, and how it interacts with the Greek-letter buttons.
+- [Importing data](data-import.md) - Insert > Data from file...: bringing a CSV file into the sheet
+  as a dataset (delimiter, decimal mark, header, units like `name [unit]`), using its columns such
+  as `run1_t` in `mean`, `fit_linear` and plots, the Data tab (Import, Refresh, Rename, Remove),
+  saving data inside the sheet (file format 5), and the limits.
 - [Error messages](errors.md) — every message LiveSheet can show you while using the features
   above, grouped by area, with what causes it and how to fix it.

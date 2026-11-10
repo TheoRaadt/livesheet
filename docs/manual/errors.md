@@ -311,6 +311,81 @@ is not defined` simply is not defined on the sheet (the list also offers built-i
 [Undefined names and bare units](#undefined-names-and-bare-units). See
 [Autocomplete](autocomplete.md).
 
+## Importing data
+
+These appear in red in the **Import data** window (OK stays greyed out until they are gone), in a
+message box after Refresh, Rename or Remove, on the region that uses imported data, or when you open
+a file. `<...>` stands for text from your file or sheet. See [Importing data](data-import.md).
+
+### Reading the file
+
+| Message | Cause | Fix |
+|---|---|---|
+| `Choose a file to import.` | The **File** box is empty. | Click Browse... or type a path. |
+| `Cannot open '<path>': file not found.` | The path does not exist (also shown by Refresh when the original file has moved or been deleted; the dataset then stays as it was). | Correct the path, or move the file back. |
+| `Cannot read '<path>': <reason>.` | The file exists but the system refused to read it (for example no permission). | Fix the file's permissions, or choose another file. |
+| `'<path>' is not valid UTF-8 text; try the Latin-1 encoding option.` | The file contains bytes that UTF-8 cannot decode. | Set **Encoding** to Latin-1. |
+| `The text cannot be split into fields: <reason>.` | The file's quoting is broken, so a line cannot be split into cells. | Fix the quotes in the file, or try another delimiter. |
+| `The file has no data rows.` | Nothing is left after skipped lines, blank lines and the header row. | Check **Skip first N lines** and **First row is a header**, or choose another file. |
+| `Line <n> has <k> field(s), but the first line has <m>.` (for one cell: `Line 3 has 1 field, but the first line has 2.`) | A line has a different number of cells than the first line. | Fix the file, or choose the delimiter that really separates the cells. Line numbers count from the top of the file, including skipped lines. |
+| `The file has no numeric column.` | Every column contains something that is not a number. | Check **Decimal mark** and the delimiter; a column with one stray word becomes text. |
+| `Column '<name>' has an empty value at line <n>; fill it in or choose to skip incomplete rows.` | A number column has an empty cell and **Incomplete rows** is set to Report an error. | Fill in the cell, or set **Incomplete rows** to Skip them. |
+| `No complete rows left.` | **Incomplete rows** is Skip them, but every row had an empty cell. | Fix the data, or check the delimiter and header options. |
+| `The file has <n> rows; LiveSheet reads at most 20000.` | More than 20,000 data rows. | Use a smaller file or a part of it. |
+| `The file has <n> columns; LiveSheet reads at most 100.` | More than 100 columns. | Use a file with fewer columns. |
+| `The file has <n> numeric cells; LiveSheet reads at most 200000.` | Rows times number columns exceeds 200,000. | Remove columns or rows. |
+| `The value '<text>...' is too large to read as a decimal number.` | A number written with a decimal point or exponent is too large to be stored. | Correct the value. |
+| `Column '<name>': '<unit>' is not a known unit.` | A header's `[unit]`, or a unit typed in the **Unit** cell, is not a unit LiveSheet knows (or contains a number, a sum or a difference). | Fix the unit text, for example `mm`, `N/m`, `kg*m/s^2`, or clear the cell. |
+
+### Option values
+
+These come from the options themselves and normally cannot occur through the window's own fields,
+except the first.
+
+| Message | Cause | Fix |
+|---|---|---|
+| `The delimiter must be a single character other than a quote.` | **Delimiter** is Other and the box is empty, holds more than one character, or holds a quote. | Type exactly one character (not `"`). |
+| `The delimiter and the decimal mark must differ.` | For example Comma as delimiter with Comma as decimal mark. | Change one of them. |
+| `The decimal mark must be '.' or ','.` / `The number of lines to skip must be 0 or more.` / `Unsupported encoding '<name>'.` / `Unknown handling of incomplete rows '<name>'.` | An option holds a value the window does not offer. | Pick one of the offered choices. |
+
+### Warnings (grey text, import still works)
+
+| Message | Meaning |
+|---|---|
+| `Column '<name>' is read as text because line <n> holds '<cell>'.` | One cell is not a number under the chosen **Decimal mark**, so the whole column became text and cannot be used in formulas. Change the option or fix the cell if you wanted numbers. |
+| `Skipped <n> rows with missing values.` | **Incomplete rows** is Skip them; that many rows were dropped. |
+| `Column '<name>' is text; its unit '<unit>' is ignored.` | The header gave a unit to a text column. |
+| `Columns changed: removed '<a>'; added '<b>'.` | Shown after **Refresh** when the file's columns are not the same as before. |
+
+### Dataset names
+
+| Message | Cause | Fix |
+|---|---|---|
+| `'<name>' is not a valid name: use letters, digits and _, not starting with a digit.` | The name is empty or has other characters, or starts with a digit. | Rename it, for example `run2` instead of `2run`. |
+| `'<name>' is not a valid name: at most 40 characters.` | The name is longer than 40 characters. | Shorten it. |
+| `A dataset named '<name>' already exists.` | Another dataset in the sheet has this name (names are case-sensitive). | Choose a different name. |
+| `'<name>' is already a unit name; choose another dataset name.` | For example `m`. | Choose a different name. |
+| `'<name>' is already a function name; choose another dataset name.` / `'<name>' is already a constant name; choose another dataset name.` | For example `sin` or `mean`; `pi`. | Choose a different name. |
+| `Variable '<v>' would be defined by both dataset '<a>' and dataset '<b>'.` | Two datasets would produce the same variable (for example dataset `a` with column `b_c`, and dataset `a_b` with column `c`). Shown in the import window, or in a message box after Rename. | Rename a dataset (or change a column name in the file). |
+
+### Refresh, Rename and Remove
+
+| Message | Cause | Fix |
+|---|---|---|
+| `Refresh failed` (message box title, with the reason from the first table) | The file could not be read again. The dataset is unchanged. | Fix the cause shown, then Refresh again. |
+| `This dataset has no source file to refresh from.` | The dataset was stored without a file name. | Import the file again instead. |
+| `There is no dataset named '<name>'.` | The dataset was removed before the command ran. | Select an existing dataset. |
+| `Rename failed` (message box title, with a dataset-name message from above) | The new name was refused. | Choose another name. |
+
+### In your formulas and when opening a file
+
+| Message | Cause | Fix |
+|---|---|---|
+| `'<name>' is a dataset column and cannot be redefined; rename the variable or the dataset.` (for example `'run1_t' is a dataset column ...`) | A region defines (`:=`, `≡` or a range) a name that a dataset provides. Other regions are not affected. | Use another name for your variable, or rename the dataset. |
+| `<name> is not defined` (for example `run1 is not defined`, `run1_F is not defined`) | The dataset was removed or renamed, a refreshed file no longer has that column, a text column was used, or you used the combined matrix `run1` of a dataset whose number columns have different units (the Data tab says "No combined matrix (columns have different units)"). See also [Undefined names and bare units](#undefined-names-and-bare-units). | Use a column that exists, or re-import with the units set the same. |
+| `This file was made with a newer LiveSheet version` | The sheet holds datasets (file format version 5) and this LiveSheet build is older, or the file otherwise uses a newer format. | Open it with a newer LiveSheet. |
+| `Invalid dataset in file: <reason>` (for example `columns of dataset 'run1' have unequal lengths`, `duplicate name 'run1'`) | The dataset stored in the file is damaged or inconsistent. The file is not opened, so no data is silently lost. | Restore the file from a backup, or fix the file's contents. |
+
 ## The toolbar
 
 The larger Standard toolbar adds no error messages. If you cannot see the names on the buttons,

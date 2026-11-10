@@ -270,9 +270,10 @@ two `tmp_path` ones).
    (1-based indexing as already defined by spec 002; developer confirms the exact index base and printing).
    `run1 =` is a 4 x 2 matrix.
 2. Units: `x [mm],y [N]\n1,10\n2,20\n3,30` as dataset `d`: columns `x` (unit `mm`, label `x`) and `y`
-   (unit `N`). `mean(d_x) =` gives `2 mm`, `mean(d_y) =` gives `20 N`. Matrix `d` is not defined
+   (unit `N`). Note (manager-approved 2026-11-10): dataset data behaves exactly like typed unit data, so
+   a bare `mean(d_x) =` prints SI (`0.002 m`); the explicit `= mm` form gives `2 mm`. `mean(d_x) = mm` gives `2 mm`, `mean(d_y) =` gives `20 N`. Matrix `d` is not defined
    (different units); `d =` gives the ordinary not-defined error. Overriding the unit of `x` to `cm`
-   changes `mean(d_x) =` to `2 cm`. Header `x [foo]` -> `Column 'x': 'foo' is not a known unit.`
+   changes `mean(d_x) = cm` to `2 cm`. Header `x [foo]` -> `Column 'x': 'foo' is not a known unit.`
 3. Decimal comma: `a;b\n1,5;2\n3,5;4` suggests delimiter `;`, decimal `,`, header true;
    `d_a` equals `[1.5; 3.5]`, `d_b` equals `[2; 4]`. With decimal forced to `.` the column `a` is text
    with warning "Column 'a' is read as text because line 2 holds '1,5'." and `d_a` is not defined.
