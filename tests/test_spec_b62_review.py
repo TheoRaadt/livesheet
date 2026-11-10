@@ -71,9 +71,22 @@ def test_engine_error_in_body_is_clean():
     assert err("f(u):=stdev([u])", "f(3) =") == "stdev() needs at least 2 values"
 
 
-@pytest.mark.xfail(strict=True, reason="B62-R1: zero-arg stats call in a body yields misleading 'f is not defined'")
 def test_zero_args_in_body_reports_arg_count():
     assert err("f(u):=mean()", "f(3) =") == "Wrong number of arguments"
+
+
+def test_too_many_args_in_body_reports_arg_count():
+    assert err("f(u):=mean(u,u,u)", "f(3) =") == "Wrong number of arguments"
+    assert err("f(u):=normal_cdf(u,0,1,2)", "f(3) =") == "Wrong number of arguments"
+
+
+def test_wrong_arg_count_in_nested_body_reports_arg_count():
+    assert err("f(u):=mean()", "g(v):=f(v)+1", "g(3) =") == "Wrong number of arguments"
+    assert err("f(u):=mean(u,u,u)", "g(v):=f(v)+1", "g(3) =") == "Wrong number of arguments"
+
+
+def test_other_body_errors_still_say_not_defined():
+    assert err("f(u):=u+zz", "f(3) =") != "Wrong number of arguments"
 
 
 def test_nested_user_functions():

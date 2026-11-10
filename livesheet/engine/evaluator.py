@@ -449,7 +449,15 @@ class Engine:
             params = [sp.Symbol(p) for p in st.params]
             local = dict(env)
             local.update({p.name: p for p in params})
-            body = self.parse(st.expr, local)
+            try:
+                body = self.parse(st.expr, local)
+            except StatementError as exc:
+                if str(exc) != _ARITY_ERROR:
+                    raise
+                # Keep the name defined so a later call reports the real cause (e.g. a wrong
+                # argument count in the body) instead of "not defined".
+                env[st.name] = _failed_function(exc)
+                raise
             value = sp.Lambda(tuple(params), body)
         else:
             value = self.parse(st.expr, env)
@@ -698,6 +706,13 @@ class Engine:
         raise StatementError(f"Unknown keyword '{kw}'")
 
 
+def _failed_function(exc: Exception):
+    """Placeholder for a function whose body failed on a call's argument count; calling it re-raises."""
+    def failed(*_args, **_kwargs):
+        raise exc
+    return failed
+
+
 def _is_global(st: Statement) -> bool:
     return st.kind == "global" or (st.kind == "range" and st.is_global)
 
@@ -740,6 +755,9 @@ def _unit_label(text: str) -> str:
 _CALL_RE = re.compile(r"(?<![\w.])([^\W\d]\w*)\s*\(")
 
 
+_ARITY_ERROR = "Wrong number of arguments"
+
+
 def _call_error_text(exc: TypeError, text: str, env: dict) -> str:
     """Error text for a failed call; a unit or value used like a function gets a clear name."""
     for name in _CALL_RE.findall(text):
@@ -754,5 +772,5 @@ def _type_error_text(exc: TypeError) -> str:
     if "not callable" in msg:
         return "Not a function: " + msg.split("'")[1] if "'" in msg else "Not a function"
     if "positional argument" in msg or "takes" in msg:
-        return "Wrong number of arguments"
+        return _ARITY_ERROR
     return msg
