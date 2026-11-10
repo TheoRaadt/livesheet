@@ -302,6 +302,17 @@ text; problems show when the sheet recalculates, under [Statistics](#statistics)
 [Optimization (solve models)](#optimization-solve-models). The Outline tab only lists headings; an
 empty list is a hint, not an error. See [The main window](main-window.md#the-outline-tab).
 
+## Calculus templates
+
+The Calculus and root buttons only insert text, so they add no messages of their own. See
+[Calculus and root templates](main-window.md#calculus-and-root-templates).
+
+| Message | Cause | Fix |
+|---|---|---|
+| `Invalid limits given: (x, 0, 3)` (the bracket shows your bounds) | The bounds were written flat, as `integrate(x^2, x, 0, 3)`, or the bounds bracket has too many parts. | Write the bounds in one bracket with the variable: `integrate(x^2, (x, 0, 3))`. |
+| `<name> is not defined` (e.g. `b is not defined`) | A bound or the integrand uses a name that has no definition, for example a template whose `a`, `b` or `f` you did not replace, evaluated with `=`. | Replace the stand-in or define the name above. With `→` an undefined bound is kept as a symbol instead. |
+| An error about a number where a variable is expected (SymPy wording) | The integration variable has a definition on your sheet (for example `x := 5`), so `integrate(x^2, x)` integrates over a number. | Use an integration variable that you have not defined. |
+
 ## Autocomplete
 
 Autocomplete adds no error messages of its own. If the list does not appear, check that you have

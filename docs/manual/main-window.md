@@ -109,11 +109,17 @@ happens whether you click the button or use one of the keyboard shortcuts descri
     Xi, Pi, Sigma, Phi, Psi, Omega). Clicking a Greek-letter button inserts the plain English name
     (e.g. the `α` button inserts the text `alpha`) — LiveSheet already displays that text as the
     glyph once you move on, so clicking the button is just a shortcut for typing the word yourself.
-- **Algebra** — `√` (Square root, inserts `sqrt(`), `ⁿ√` (Nth root, inserts `root(` — use it as
-  `root(expr, n)`), `x²` (Square, inserts `^2`), and `xₙ` (Subscript, inserts a single `_`) — see
-  "Typing a subscript" below.
-- **Calculus** — `d/dx` (Derivative, inserts `diff(` — use it as `diff(expr, x)`) and `∫` (Integral,
-  inserts `integrate(` — use it as `integrate(expr, x)` or `integrate(expr, x, a, b)`).
+- **Algebra** — `√` (Square root, inserts `sqrt(x)`), `ⁿ√` (Nth root, inserts `root(x, n)`), `x²`
+  (Square, inserts `^2`), and `xₙ` (Subscript, inserts a single `_`) — see "Typing a subscript"
+  below. `√` and `ⁿ√` insert a complete expression with `x` selected, see "Calculus and root
+  templates" below.
+- **Calculus** — four buttons, each inserting a complete expression:
+  - `d/dx` (Derivative) inserts `diff(f, x)`.
+  - `∫` (Integral) inserts `integrate(f, x)`.
+  - `∫ₐᵇ` (Definite integral) inserts `integrate(f, (x, a, b))`.
+  - `lim` (Limit) inserts `limit(f, x, 0)`.
+
+  See "Calculus and root templates" below.
 - **Statistics** — 37 buttons in four groups, each inserting a ready-to-edit template: *Summary
   statistics* (10), *Distributions* (16), *Hypothesis tests* (7) and *Regression* (4). Hover a
   button for a one-line meaning. See [Statistics](statistics.md#the-statistics-tab).
@@ -128,6 +134,64 @@ happens whether you click the button or use one of the keyboard shortcuts descri
 
 The template buttons put readable stand-in names into the line, for example `mean(v)`. After
 clicking, replace the stand-ins (`v`) with your own names.
+
+### Calculus and root templates
+
+The `√`, `ⁿ√`, `d/dx`, `∫`, `∫ₐᵇ` and `lim` buttons never leave a half-typed line. Each one inserts a
+complete expression and selects its first part, so whatever you type next replaces it:
+
+| Button | Inserts | Selected part |
+|---|---|---|
+| `√` | `sqrt(x)` | `x` |
+| `ⁿ√` | `root(x, n)` | `x` |
+| `d/dx` | `diff(f, x)` | `f` |
+| `∫` | `integrate(f, x)` | `f` |
+| `∫ₐᵇ` | `integrate(f, (x, a, b))` | `f` |
+| `lim` | `limit(f, x, 0)` | `f` |
+
+If text is already selected when you click, the template replaces it. Undo (Cmd/Ctrl+Z) removes the
+whole template in one step. To fill in the other parts (`x`, `a`, `b`, `n`, the `0`), click into
+them or use the arrow keys and type over them.
+
+**Worked example.** Click `∫ₐᵇ`. The region now reads `integrate(f, (x, a, b))` with `f` selected.
+Type `x^2 + 2*x`, then change `a` to `0` and `b` to `3` and add ` =` at the end:
+
+    integrate(x^2 + 2*x, (x, 0, 3)) =
+
+LiveSheet shows `= 18`. Other results you can expect:
+
+| You write | LiveSheet shows |
+|---|---|
+| `integrate(x^2, (x, 0, 2)) →` | `→ 8/3` |
+| `integrate(x^2 - 2*x, (x, 0, 3)) =` | `= 0` |
+| `integrate(x^2, (x, 0, b)) →` | `→ b³/3` |
+| `integrate(exp(-x), (x, 0, oo)) =` | `= 1` |
+| `integrate(1/x^2, (x, 1, oo)) =` | `= 1` |
+| `limit(sin(x)/x, x, 0) →` | `→ 1` |
+| `limit(1/x, x, oo) →` | `→ 0` |
+
+**Bounds.** The bounds go in brackets together with the variable: `(x, a, b)`. Do not write them
+flat as `integrate(f, x, a, b)`; that shows an error (see
+[Calculus templates](errors.md#calculus-templates)). A bound can be:
+
+- a number, such as `0` or `3`;
+- a name you defined earlier, such as `b` after `b := 3` (then `integrate(x^2, (x, 0, b)) =`
+  shows `= 9`). An undefined bound gives `b is not defined` with `=`; with `→` the answer keeps
+  the symbol, as in `b³/3`;
+- a value with a unit, such as `0 s` to `4 s`. After `accel := 2 m/s^2`,
+  `integrate(accel, (t, 0 s, 4 s)) =` shows `= 8 m/s`; after `P := 100 W`,
+  `integrate(P, (t, 0 s, 10 s)) =` shows `= 1000 J`; after `k := 2 N/m`,
+  `integrate(k*x, (x, 0 m, 3 m)) =` shows `= 9 J`;
+- `oo` for infinity (`-oo` for minus infinity), as in the table above. A result with `=` is
+  rounded to 6 significant digits, for example `integrate(exp(-x^2), (x, -oo, oo)) =` shows about
+  1.77245.
+
+When you click away from the region, the integral is drawn in textbook form, for example `∫` with
+`0` below and `3` above.
+
+**Limitation.** The integration variable must not be defined on your sheet. If you have written
+`x := 5` above, then `integrate(x^2, x)` fails because `x` is replaced by 5 first. Use a different
+name for the integration variable (for example `integrate(s^2, s)`) or rename your own variable.
 
 ### The Outline tab
 
