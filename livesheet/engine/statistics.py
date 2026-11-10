@@ -531,6 +531,7 @@ def _deferred(name: str, fn):
         return _Call(*args)
 
     wrapper.__name__ = name
+    wrapper.__wrapped__ = fn   # lets the completion hints find the real signature
     return wrapper
 
 

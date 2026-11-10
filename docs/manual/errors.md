@@ -302,6 +302,15 @@ text; problems show when the sheet recalculates, under [Statistics](#statistics)
 [Optimization (solve models)](#optimization-solve-models). The Outline tab only lists headings; an
 empty list is a hint, not an error. See [The main window](main-window.md#the-outline-tab).
 
+## Autocomplete
+
+Autocomplete adds no error messages of its own. If the list does not appear, check that you have
+typed at least two letters, that the caret is at the end of the word, that you are in a math region,
+and that you have not pressed Esc for this word. A name you accepted but is then reported as `<name>
+is not defined` simply is not defined on the sheet (the list also offers built-in names); see
+[Undefined names and bare units](#undefined-names-and-bare-units). See
+[Autocomplete](autocomplete.md).
+
 ## The toolbar
 
 The larger Standard toolbar adds no error messages. If you cannot see the names on the buttons,

@@ -254,6 +254,16 @@ new math region. Now type `:= 30 deg` and press Enter. The region shows:
 
 with `α` already rendered as the glyph, even though what you actually typed was the word `alpha`.
 
+**Autocomplete and Greek letters.** The buttons and shortcuts above never open the
+[autocomplete](autocomplete.md) list. Typing a Greek name by hand opens it only if a built-in name
+starts with what you typed (`Gam` offers `Gamma`; `alpha` offers nothing).
+
+### Autocomplete while typing
+
+After two typed letters in a math region, a small list of matching function, constant and your own
+names opens under the caret. Down/Up move, Tab accepts (inserting `name(` for a function), Esc
+closes it, and Enter still just finishes the region. See [Autocomplete](autocomplete.md).
+
 ### Typing a subscript
 
 The Algebra tab's `xₙ` button (tooltip "Subscript") inserts a single underscore character, `_`, at

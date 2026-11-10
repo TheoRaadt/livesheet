@@ -46,6 +46,7 @@ def _needs_variable(name: str, fn):
         return fn(value, *args, **kwargs)
 
     wrapper.__name__ = name
+    wrapper.__wrapped__ = fn   # lets the completion hints find the real signature
     return wrapper
 
 
@@ -96,6 +97,7 @@ def _scalar_only(name: str, fn):
         return fn(*args, **kwargs)
 
     wrapper.__name__ = name
+    wrapper.__wrapped__ = fn   # lets the completion hints find the real signature
     return wrapper
 
 

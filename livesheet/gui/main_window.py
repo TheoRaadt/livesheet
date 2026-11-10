@@ -94,6 +94,15 @@ Ctrl+wheel zooms.</p>
 """
 
 
+_SettingsClass = QSettings   # tests monkeypatch the module-level name QSettings
+
+
+def make_settings() -> QSettings:
+    """The application settings. Honours ``QSettings.setDefaultFormat`` (the plain two-argument
+    constructor ignores it on some platforms), so tests can redirect to a temp INI file."""
+    return QSettings(_SettingsClass.defaultFormat(), _SettingsClass.Scope.UserScope, "LiveSheet", "LiveSheet")
+
+
 class _ClickableLabel(QLabel):
     """A plain status-bar label that also reacts to a left click (spec 007's precision label)."""
 
@@ -116,7 +125,7 @@ class MainWindow(QMainWindow):
         self._central_layout.addWidget(self.view)
         self.setCentralWidget(central)
         self.path: Path | None = None
-        self.settings = QSettings("LiveSheet", "LiveSheet")
+        self.settings = make_settings()
 
         self._eval_label = QLabel("Ready")
         self._eval_label.setObjectName("status-eval-label")
@@ -578,7 +587,7 @@ def run(argv: list[str]) -> int:
     app = QApplication.instance() or QApplication(argv)
     app.setApplicationName("LiveSheet")
     app.setOrganizationName("LiveSheet")
-    settings = QSettings("LiveSheet", "LiveSheet")
+    settings = make_settings()
     apply_theme(app, settings.value("appearance", MODE_SYSTEM, type=str))
     path = next((a for a in argv[1:] if not a.startswith("-")), None)
     win = MainWindow(path)

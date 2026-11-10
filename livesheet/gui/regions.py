@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from PySide6.QtCore import QPointF, QRectF, Qt, Signal
+from PySide6.QtCore import QEvent, QPointF, QRectF, Qt, Signal
 from PySide6.QtGui import (
     QColor,
     QFont,
@@ -21,6 +21,8 @@ from PySide6.QtWidgets import (
 
 from ..engine import RegionResult, wiring
 from ..engine.formatting import format_grid, format_table
+from ..engine import completion
+from .completion_popup import CompletionPopup
 from .keys import colon_edit
 from .pretty import display_source, pretty_source_html
 
@@ -58,6 +60,19 @@ class _Editor(QGraphicsTextItem):
     def keyPressEvent(self, event: QKeyEvent) -> None:
         if not self.region.handle_key(event):
             super().keyPressEvent(event)
+        after = getattr(self.region, "after_key", None)
+        if after is not None:
+            after(event)
+
+    def sceneEvent(self, event) -> bool:
+        """QGraphicsTextItem hands Tab straight to its text control; while a completion popup
+        is open it must reach keyPressEvent/handle_key instead (spec 024)."""
+        if (event.type() == QEvent.Type.KeyPress and event.key() in (Qt.Key.Key_Tab, Qt.Key.Key_Backtab)
+                and getattr(self.region, "popup_open", lambda: False)()):
+            self.keyPressEvent(event)
+            event.accept()
+            return True
+        return super().sceneEvent(event)
 
     def focusOutEvent(self, event) -> None:
         super().focusOutEvent(event)
@@ -257,6 +272,9 @@ class MathRegion(Region):
         self.result_item.setFont(MATH_FONT)
         self.result_item.document().setDocumentMargin(1)
         self.result_item.setAcceptedMouseButtons(Qt.MouseButton.NoButton)
+        self._popup: CompletionPopup | None = None
+        self._popup_dismissed: int | None = None   # word start the user dismissed with Esc
+        self._in_key = False
         self._show_display()
 
     def text(self) -> str:
@@ -267,6 +285,10 @@ class MathRegion(Region):
 
     def handle_key(self, event: QKeyEvent) -> bool:
         key, mods, txt = event.key(), event.modifiers(), event.text()
+        self._in_key = True
+        if self.popup_open() and self._popup_key(event):
+            self._skip_refresh = True
+            return True
         cursor = self.editor.textCursor()
         if key in (Qt.Key.Key_Return, Qt.Key.Key_Enter):
             self.finish_editing(move_below=True)
@@ -287,6 +309,149 @@ class MathRegion(Region):
             return True
         return super().handle_key(event)
 
+    # -- completion popup (spec 024) ---------------------------------------------
+
+    _skip_refresh = False
+
+    def popup_open(self) -> bool:
+        return self._popup is not None and self._popup.is_open()
+
+    def completion_popup(self) -> CompletionPopup | None:
+        return self._popup
+
+    def _popup_key(self, event: QKeyEvent) -> bool:
+        key, popup = event.key(), self._popup
+        if key == Qt.Key.Key_Down:
+            popup.move(1)
+        elif key == Qt.Key.Key_Up:
+            popup.move(-1)
+        elif key == Qt.Key.Key_PageDown:
+            popup.page(1)
+        elif key == Qt.Key.Key_PageUp:
+            popup.page(-1)
+        elif key == Qt.Key.Key_Tab:
+            self.accept_completion(popup.highlighted())
+        elif key == Qt.Key.Key_Escape:
+            word = completion.word_at(self.editor.toPlainText(), self.editor.textCursor().position())
+            self._popup_dismissed = word[0] if word else None
+            self.close_popup()
+        elif key in (Qt.Key.Key_Return, Qt.Key.Key_Enter):
+            self.close_popup()
+            return False
+        else:
+            return False
+        return True
+
+    def after_key(self, event: QKeyEvent) -> None:
+        """Runs after the editor processed a key: refresh the popup after typing, else close it."""
+        self._in_key = False
+        if self._skip_refresh:
+            self._skip_refresh = False
+            return
+        if not self.editing:
+            return
+        key = event.key()
+        if key in (Qt.Key.Key_Shift, Qt.Key.Key_Control, Qt.Key.Key_Alt, Qt.Key.Key_Meta,
+                   Qt.Key.Key_CapsLock, Qt.Key.Key_AltGr):
+            return
+        mods = event.modifiers()
+        text = event.text()
+        typed = (key in (Qt.Key.Key_Backspace, Qt.Key.Key_Delete)
+                 or (bool(text) and text.isprintable()
+                     and not mods & (Qt.KeyboardModifier.ControlModifier | Qt.KeyboardModifier.MetaModifier)))
+        if typed:
+            self.refresh_popup()
+        else:
+            self.close_popup()
+
+    def _other_sources(self) -> list[str]:
+        scene = self.scene()
+        if scene is None or not hasattr(scene, "regions"):
+            return []
+        return [r.source for r in scene.regions() if r is not self and isinstance(r, MathRegion)]
+
+    def refresh_popup(self) -> None:
+        scene = self.scene()
+        text, caret = self.editor.toPlainText(), self.editor.textCursor().position()
+        if not self.editing or scene is None:
+            self.close_popup()
+            return
+        word = completion.word_at(text, caret)
+        if word is None:
+            self._popup_dismissed = None
+            self.close_popup()
+            return
+        if word[0] == self._popup_dismissed:
+            self.close_popup()
+            return
+        result = completion.complete(text, caret, self._other_sources())
+        if result is None:
+            self.close_popup()
+            return
+        if self._popup is None:
+            self._popup = CompletionPopup(self.accept_completion)
+        if self._popup.scene() is None:
+            scene.addItem(self._popup)
+        self._popup.set_items(result.candidates)
+        self._popup.setVisible(True)
+        self._place_popup(result.start, caret)
+
+    def _caret_scene_point(self, pos: int) -> tuple[QPointF, float]:
+        doc = self.editor.document()
+        block = doc.findBlock(pos)
+        layout = block.layout()
+        x, y, h = 0.0, 0.0, 20.0
+        if layout is not None and layout.lineCount():
+            line = layout.lineForTextPosition(pos - block.position())
+            if line.isValid():
+                x = line.cursorToX(pos - block.position())[0]
+                y = line.y() + layout.position().y()
+                h = line.height()
+        return self.editor.mapToScene(QPointF(x, y)), h
+
+    def _place_popup(self, start: int, caret: int) -> None:
+        origin, line_h = self._caret_scene_point(start)
+        w, h = self._popup.size()
+        x, y = origin.x(), origin.y() + line_h + 2
+        scene = self.scene()
+        views = scene.views() if scene is not None else []
+        if views:
+            view = views[0]
+            vis = view.mapToScene(view.viewport().rect()).boundingRect()
+            if y + h > vis.bottom():
+                y = origin.y() - h - 2
+            x = max(vis.left(), min(x, vis.right() - w))
+        self._popup.setPos(x, y)
+
+    def close_popup(self) -> None:
+        popup = self._popup
+        if popup is None:
+            return
+        popup.clear()
+        if popup.scene() is not None:
+            popup.scene().removeItem(popup)
+
+    def accept_completion(self, index: int) -> None:
+        popup = self._popup
+        if popup is None or not popup.is_open():
+            return
+        popup.move(index - popup.highlighted(), wrap=False)
+        cand = popup.current()
+        text, caret = self.editor.toPlainText(), self.editor.textCursor().position()
+        self.close_popup()
+        if cand is None:
+            return
+        new_text, new_caret = completion.accept(text, caret, cand)
+        cursor = self.editor.textCursor()
+        cursor.setPosition(completion.word_at(text, caret)[0] if completion.word_at(text, caret) else caret)
+        cursor.setPosition(caret, QTextCursor.MoveMode.KeepAnchor)
+        cursor.insertText(new_text[cursor.selectionStart():new_caret])
+        self.editor.setTextCursor(cursor)
+
+    def abort_editing(self) -> None:
+        self.close_popup()
+        super().abort_editing()
+
     def _text_before_cursor(self) -> str:
         cursor = self.editor.textCursor()
         return self.editor.toPlainText()[: cursor.position()]
@@ -294,6 +459,8 @@ class MathRegion(Region):
     def _on_contents_changed(self) -> None:
         if self.editing:
             self.source = self.editor.toPlainText().replace("\n", " ").replace(" ", " ")
+            if not self._in_key and self.popup_open():
+                self.close_popup()   # programmatic insert (Greek buttons, formula tabs, paste)
         super()._on_contents_changed()
 
     def _enter_edit_display(self) -> None:
@@ -303,6 +470,8 @@ class MathRegion(Region):
         self._place_result()
 
     def _leave_edit_display(self) -> None:
+        self.close_popup()
+        self._popup_dismissed = None
         self._show_display()
 
     def _show_display(self) -> None:

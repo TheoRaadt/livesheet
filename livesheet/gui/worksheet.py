@@ -23,6 +23,7 @@ from PySide6.QtWidgets import (
 from ..document import RegionData, SheetDocument, WireData
 from ..engine import Engine, wiring
 from ..engine.pagination import PAGE_HEIGHT, PAGE_WIDTH, order_key
+from .completion_popup import CompletionPopup
 from .plotregion import PlotRegion, engine_source
 from .regions import COLOR_ERROR, COLOR_FRAME, GRID, ComponentRegion, MathRegion, Region, TextRegion, snap
 
@@ -853,6 +854,10 @@ class Worksheet(QGraphicsScene):
 
     def mousePressEvent(self, event) -> None:
         item = self.itemAt(event.scenePos(), self.views()[0].transform() if self.views() else self._identity())
+        if isinstance(item, CompletionPopup):
+            item.pick_at(item.mapFromScene(event.scenePos()))   # spec 024: pick a row
+            event.accept()
+            return
         region = self._region_of(item)
         if (event.button() == Qt.MouseButton.LeftButton and isinstance(region, ComponentRegion)
                 and not region.editing):
@@ -1229,6 +1234,14 @@ class WorksheetView(QGraphicsView):
 
     def zoom(self) -> float:
         return self._zoom
+
+    def focusNextPrevChild(self, next_: bool) -> bool:
+        """Keep Tab for the editor while a completion popup is open (spec 024)."""
+        scene = self.scene()
+        editing = scene.editing_region() if scene is not None and hasattr(scene, "editing_region") else None
+        if editing is not None and getattr(editing, "popup_open", lambda: False)():
+            return False
+        return super().focusNextPrevChild(next_)
 
     def set_zoom(self, factor: float) -> None:
         factor = max(0.4, min(3.0, factor))
