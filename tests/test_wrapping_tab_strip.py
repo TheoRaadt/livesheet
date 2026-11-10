@@ -33,7 +33,7 @@ from PySide6.QtWidgets import (  # noqa: E402
 
 from livesheet.gui import main_window as mw_module  # noqa: E402
 from livesheet.gui.main_window import MainWindow  # noqa: E402
-from livesheet.gui.sidepanel import MATH_TOKENS, PLACEHOLDER_TABS, TAB_ORDER  # noqa: E402
+from livesheet.gui.sidepanel import MATH_TOKENS, OUTLINE_EMPTY, PLACEHOLDER_TABS, TAB_ORDER  # noqa: E402
 from livesheet.gui.tabstrip import GAP, greedy_rows  # noqa: E402
 from livesheet.gui.theme import MODE_DARK, MODE_LIGHT, apply_theme  # noqa: E402
 
@@ -491,7 +491,7 @@ def test_c19_selected_tab_persists_and_band_shows_it():
     assert [i for i, b in enumerate(_buttons(win2)) if b.isChecked()] == [8]
     page = win2.side_panel.tabs.currentWidget()
     assert page.isVisible()
-    assert page.findChildren(QLabel)[0].text() == PLACEHOLDER_TABS["Outline"]
+    assert page.findChildren(QLabel)[0].text() == OUTLINE_EMPTY
     _close(win2)
 
 

@@ -38,6 +38,7 @@ def win(app):
     w.sheet.clear_sheet()
     QApplication.processEvents()
     yield w
+    w.sheet.set_modified(False)   # else close() opens a blocking save prompt
     w.close()
 
 

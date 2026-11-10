@@ -36,7 +36,7 @@ def last(*sources):
 def test_structure():
     assert tuple(TAB_CATEGORIES["Statistics"]) == tuple(STAT_GROUPS)
     assert tuple(TAB_CATEGORIES["Optimization"]) == tuple(OPT_GROUPS)
-    assert set(PLACEHOLDER_TABS) == {"Outline", "Data"}
+    assert set(PLACEHOLDER_TABS) == {"Data"}
     assert len(TAB_ORDER) == 10
     for g, n in {**STAT_GROUPS, **OPT_GROUPS}.items():
         assert len(rows(g)) == n
