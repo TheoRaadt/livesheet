@@ -123,10 +123,11 @@ GREEK_UPPER_NAMES = ["Gamma", "Delta", "Theta", "Lambda", "Xi", "Pi", "Sigma", "
 assert len(GREEK_UPPER_NAMES) == 10
 
 # Criterion 4: the 3 carried-over Algebra ("Operators") entries, plus the new Subscript entry.
-EXPECTED_ALGEBRA = [("√", "sqrt("), ("ⁿ√", "root("), ("x²", "^2"), ("xₙ", "_")]
+EXPECTED_ALGEBRA = [("√", "sqrt(x)"), ("ⁿ√", "root(x, n)"), ("x²", "^2"), ("xₙ", "_")]
 
 # Criterion 5: the 2 Calculus entries.
-EXPECTED_CALCULUS = [("d/dx", "diff("), ("∫", "integrate(")]
+EXPECTED_CALCULUS = [("d/dx", "diff(f, x)"), ("∫", "integrate(f, x)"),
+                    ("∫ₐᵇ", "integrate(f, (x, a, b))"), ("lim", "limit(f, x, 0)")]
 
 # Layer-1 table as literally printed in the spec (12 rows, including sigma/S) -- used only to
 # derive, not to assert directly (see test_layer1_count_and_membership_derived_from_first_principles).
@@ -297,7 +298,7 @@ def test_criterion4_clicking_sqrt_inserts_sqrt_open_paren():
     idx = EXPECTED_TAB_ORDER.index("Algebra")
     _button_by_label(tabs, idx, "√").click()
     region = win.sheet.editing_region()
-    assert region.source.strip() == "sqrt("
+    assert region.source.strip() == "sqrt(x)"
     _close(win)
 
 
@@ -338,8 +339,8 @@ def test_criterion5_calculus_tab_unchanged_2_entries():
     tabs = _tab_widget(win)
     idx = EXPECTED_TAB_ORDER.index("Calculus")
     buttons = _buttons_on_tab(tabs, idx)
-    assert len(buttons) == 2
-    assert {b.text() for b in buttons} == {"d/dx", "∫"}
+    assert len(buttons) == 4
+    assert {b.text() for b in buttons} == {"d/dx", "∫", "∫ₐᵇ", "lim"}
     _close(win)
 
 
@@ -349,7 +350,7 @@ def test_criterion5_clicking_d_dx_inserts_diff_open_paren():
     idx = EXPECTED_TAB_ORDER.index("Calculus")
     _button_by_label(tabs, idx, "d/dx").click()
     region = win.sheet.editing_region()
-    assert region.source.strip() == "diff("
+    assert region.source.strip() == "diff(f, x)"
     _close(win)
 
 
@@ -416,14 +417,14 @@ def test_criterion7_outline_and_data_are_sixth_and_seventh_and_still_placeholder
 # Criterion 8: total clickable tokens across the 3 functional tabs is 46.
 # ---------------------------------------------------------------------------
 
-def test_criterion8_total_buttons_across_functional_tabs_is_46_no_duplicates():
+def test_criterion8_total_buttons_across_functional_tabs_is_48_no_duplicates():
     win = _make_window()
     tabs = _tab_widget(win)
     all_labels: list[str] = []
     for name in ("Elements", "Algebra", "Calculus"):
         idx = EXPECTED_TAB_ORDER.index(name)
         all_labels.extend(b.text() for b in _buttons_on_tab(tabs, idx))
-    assert len(all_labels) == 46
+    assert len(all_labels) == 48
     # "nothing dropped, nothing duplicated": every label distinct except intentional repeats
     # across different tabs are impossible here since categories don't share glyphs; assert
     # no duplicate label appears twice *within* the full 46.
@@ -752,7 +753,7 @@ def test_edge_case_empty_document_still_shows_full_token_list_on_every_functiona
     win = _make_window()
     assert win.sheet.regions() == []
     tabs = _tab_widget(win)
-    for name, expected_count in (("Elements", 40), ("Algebra", 4), ("Calculus", 2)):
+    for name, expected_count in (("Elements", 40), ("Algebra", 4), ("Calculus", 4)):
         idx = EXPECTED_TAB_ORDER.index(name)
         assert len(_buttons_on_tab(tabs, idx)) == expected_count
     _close(win)

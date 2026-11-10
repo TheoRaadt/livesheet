@@ -363,7 +363,7 @@ def test_c14_algebra_and_calculus_counts_no_header():
     win = _window(1000)
     tabs = win.side_panel.tabs
     assert len(_inner_buttons(tabs.widget(1))) == 4
-    assert len(_inner_buttons(tabs.widget(2))) == 2
+    assert len(_inner_buttons(tabs.widget(2))) == 4
     assert not tabs.widget(1).findChildren(QLabel)
     assert not tabs.widget(2).findChildren(QLabel)
     _close(win)

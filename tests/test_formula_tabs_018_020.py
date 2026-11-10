@@ -96,7 +96,7 @@ def test_electrical_label_equals_token() -> None:
 def test_existing_tabs_unchanged() -> None:
     panel = _panel()
     assert len(_buttons(_tab(panel, "Elements"))) + len(_buttons(_tab(panel, "Algebra"))) \
-        + len(_buttons(_tab(panel, "Calculus"))) == 46
+        + len(_buttons(_tab(panel, "Calculus"))) == 48
 
 
 # -- engine behaviour of the templates ---------------------------------------------------------

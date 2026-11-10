@@ -46,13 +46,30 @@ MATH_TOKENS: list[tuple[str, str, str, str]] = [
     ("Constants", "e", "e", "Euler's number"),
     ("Constants", "i", "I", "Imaginary unit"),
     *[("Greek letters", glyph, name, name) for name, glyph in _GREEK_LOWER + _GREEK_UPPER],
-    ("Algebra", "√", "sqrt(", "Square root"),
-    ("Algebra", "ⁿ√", "root(", "Nth root: root(expr, n)"),
+    ("Algebra", "√", "sqrt(x)", "Square root of x. Type over x to replace it."),
+    ("Algebra", "ⁿ√", "root(x, n)", "Nth root of x. Replace x and n."),
     ("Algebra", "x²", "^2", "Square"),
     ("Algebra", "xₙ", "_", "Subscript"),
-    ("Calculus", "d/dx", "diff(", "Derivative: diff(expr, x)"),
-    ("Calculus", "∫", "integrate(", "Integral: integrate(expr, x) or (x, a, b)"),
+    ("Calculus", "d/dx", "diff(f, x)",
+     "Derivative of f with respect to x. Type your expression over f; rename x if needed."),
+    ("Calculus", "∫", "integrate(f, x)", "Indefinite integral of f with respect to x."),
+    ("Calculus", "∫ₐᵇ", "integrate(f, (x, a, b))",
+     "Definite integral of f for x from a to b. Bounds can be numbers, names, values with "
+     "units such as 0 m, or oo for infinity."),
+    ("Calculus", "lim", "limit(f, x, 0)",
+     "Limit of f as x approaches 0. Change 0 to another value, or to oo for infinity."),
 ]
+
+# Span (start, end) to select, relative to the inserted text, after a template button inserts
+# a complete closed template (spec 029). Tokens without an entry leave the caret after the text.
+TOKEN_SELECTION: dict[str, tuple[int, int]] = {
+    "sqrt(x)": (5, 6),
+    "root(x, n)": (5, 6),
+    "diff(f, x)": (5, 6),
+    "integrate(f, x)": (10, 11),
+    "integrate(f, (x, a, b))": (10, 11),
+    "limit(f, x, 0)": (6, 7),
+}
 
 _MECH_TOKENS: list[tuple[str, str, str, str]] = [
     ("Statics", "Resultant (2 forces)", "R := sqrt(P1^2 + P2^2 + 2*P1*P2*cos(theta))",

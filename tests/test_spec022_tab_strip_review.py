@@ -362,7 +362,7 @@ def test_c14_band_content():
     assert len(p1.findChildren(QPushButton)) == 4 and not p1.findChildren(QLabel)
     sp.tabs.setCurrentIndex(2)
     p2 = sp.tabs.widget(2)
-    assert len(p2.findChildren(QPushButton)) == 2
+    assert len(p2.findChildren(QPushButton)) == 4
     _close(w)
 
 
@@ -416,7 +416,7 @@ def test_c16_tall_page_scrolls_inside_band_strip_unaffected():
 @pytest.mark.parametrize("W", [600, 1000, 1600])
 def test_c17_first_tabs_reachable(W):
     w = _win(W)
-    for k, tok in ((0, "alpha"), (1, "sqrt("), (2, "diff(")):
+    for k, tok in ((0, "alpha"), (1, "sqrt(x)"), (2, "diff(f, x)")):
         b = _btns(w)[k]
         assert b.isVisible()
         QTest.mouseClick(b, Qt.MouseButton.LeftButton)

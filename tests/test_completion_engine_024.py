@@ -119,3 +119,7 @@ def test_e12_user_names():
     assert accept("ra", 2, r[0]) == ("rate", 4)
     m = complete("mea", 3, ["mean := 3"]).candidates
     assert [(c.name, c.kind) for c in m if c.name == "mean"] == [("mean", "variable")]
+
+
+def test_integrate_hint_uses_tuple_bounds_form():
+    assert signature_for("integrate") == "integrate(expr, (x, a, b))"

@@ -28,7 +28,7 @@ SIGNATURE_OVERRIDES: dict[str, str] = {
     "max": "max(a, b, ...)", "min": "min(a, b, ...)",
     "factorial": "factorial(n)", "binomial": "binomial(n, k)", "Gamma": "Gamma(x)",
     "re": "re(z)", "im": "im(z)", "conj": "conj(z)", "arg": "arg(z)",
-    "diff": "diff(expr, x)", "integrate": "integrate(expr, x, a, b)",
+    "diff": "diff(expr, x)", "integrate": "integrate(expr, (x, a, b))",
     "limit": "limit(expr, x, point)", "sum": "sum(expr, k, a, b)",
     "product": "product(expr, k, a, b)", "series": "series(expr, x, point, n)",
     "solve": "solve(eq, x)", "expand": "expand(expr)", "factor": "factor(expr)",

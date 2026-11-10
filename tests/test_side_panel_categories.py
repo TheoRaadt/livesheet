@@ -108,27 +108,27 @@ def test_criterion4_algebra_tab_has_4_entries_including_subscript():
     sheet = win.sheet
     sheet.clear_sheet()
     win.side_panel.symbol_buttons["√"].click()
-    assert sheet.editing_region().source == "sqrt("
+    assert sheet.editing_region().source == "sqrt(x)"
     sheet.clear_sheet()
     win.side_panel.symbol_buttons["xₙ"].click()
     assert sheet.editing_region().source == "_"
     _close(win)
 
 
-def test_criterion5_calculus_tab_has_2_entries():
+def test_criterion5_calculus_tab_has_4_entries():
     win = _win()
     calculus = win.side_panel.tabs.widget(2)
-    assert len(_buttons_of(calculus)) == 2
+    assert len(_buttons_of(calculus)) == 4
     sheet = win.sheet
     win.side_panel.symbol_buttons["d/dx"].click()
-    assert sheet.editing_region().source == "diff("
+    assert sheet.editing_region().source == "diff(f, x)"
     _close(win)
 
 
-def test_criterion8_total_clickable_tokens_is_46():
+def test_criterion8_total_clickable_tokens_is_48():
     win = _win()
     total = sum(len(_buttons_of(win.side_panel.tabs.widget(i))) for i in range(3))
-    assert total == 46
+    assert total == 48
     _close(win)
 
 

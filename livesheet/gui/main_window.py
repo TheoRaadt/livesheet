@@ -14,6 +14,7 @@ from PySide6.QtGui import (
     QPageSize,
     QPainter,
     QPdfWriter,
+    QTextCursor,
 )
 from PySide6.QtWidgets import (
     QApplication,
@@ -35,7 +36,7 @@ from .toolbarstyle import ToolbarStyler
 from .paths import default_save_path, remembered_dir
 from .importdialog import ImportDataDialog
 from .regions import MathRegion
-from .sidepanel import SidePanel
+from .sidepanel import TOKEN_SELECTION, SidePanel
 from .theme import MODE_DARK, MODE_LIGHT, MODE_SYSTEM, apply_theme
 from ..engine.pagination import PAGE_HEIGHT
 from .worksheet import PAGE_WIDTH, PageBreakItem, Worksheet, WorksheetView
@@ -333,7 +334,14 @@ class MainWindow(QMainWindow):
         region = self.sheet.editing_region()
         if not isinstance(region, MathRegion):
             region = self.sheet.insert_region("math")
-        region.editor.textCursor().insertText(token)
+        cursor = region.editor.textCursor()
+        start = cursor.selectionStart()
+        cursor.insertText(token)
+        span = TOKEN_SELECTION.get(token)
+        if span is not None:
+            cursor.setPosition(start + span[0])
+            cursor.setPosition(start + span[1], QTextCursor.MoveMode.KeepAnchor)
+            region.editor.setTextCursor(cursor)
         region.editor.setFocus()
 
     # -- datasets (spec 028) -------------------------------------------------------------
