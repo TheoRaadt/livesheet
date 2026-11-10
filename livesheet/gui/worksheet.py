@@ -4,9 +4,10 @@ from __future__ import annotations
 
 import math
 import time
+from pathlib import Path
 
 import shiboken6
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 
 from PySide6.QtCore import QPointF, QRectF, Qt, QTimer, Signal
 from PySide6.QtGui import QColor, QFont, QKeyEvent, QPainter, QPainterPath, QPen, QPolygonF, QWheelEvent
@@ -21,7 +22,7 @@ from PySide6.QtWidgets import (
 )
 
 from ..document import RegionData, SheetDocument, WireData
-from ..engine import Engine, wiring
+from ..engine import Engine, dataio, wiring
 from ..engine.pagination import PAGE_HEIGHT, PAGE_WIDTH, order_key
 from .completion_popup import CompletionPopup
 from .plotregion import PlotRegion, engine_source
@@ -187,11 +188,13 @@ class Worksheet(QGraphicsScene):
     modifiedChanged = Signal(bool)
     statusMessage = Signal(str)
     evaluationFinished = Signal(int, int, float)   # errors, total regions, elapsed ms
+    datasetsChanged = Signal()   # dataset list edited (spec 028)
     outlineDirty = Signal()   # anything that can change the heading list (spec 027)
 
     def __init__(self, parent=None):
         super().__init__(parent)
         self.engine = Engine()
+        self.datasets: list[dataio.Dataset] = []   # embedded imported data (spec 028)
         self.crosshair = Crosshair()
         self.addItem(self.crosshair)
         self.crosshair.setPos(GRID * 4, GRID * 4)
@@ -678,7 +681,71 @@ class Worksheet(QGraphicsScene):
             self._discard(r)
         self.crosshair.setPos(GRID * 4, GRID * 4)
         self.crosshair.show()
+        if self.datasets:
+            self.datasets = []
+            self.datasetsChanged.emit()
         self._update_rect()
+
+    # -- datasets (spec 028) -----------------------------------------------------
+
+    def dataset(self, name: str) -> dataio.Dataset | None:
+        return next((d for d in self.datasets if d.name == name), None)
+
+    def _datasets_edited(self) -> None:
+        self.datasetsChanged.emit()
+        self.set_modified()
+        self.recalculate()
+
+    def add_dataset(self, dataset: dataio.Dataset) -> None:
+        """Add an imported dataset (name validated against the existing ones)."""
+        dataio.validate_dataset_name(dataset.name, [d.name for d in self.datasets])
+        dataio.check_variable_conflicts(dataset, self.datasets)
+        self.datasets.append(dataset)
+        self._datasets_edited()
+
+    def remove_dataset(self, name: str) -> None:
+        self.datasets = [d for d in self.datasets if d.name != name]
+        self._datasets_edited()
+
+    def rename_dataset(self, old: str, new: str) -> None:
+        """Rename; formulas using the old variable names are not rewritten."""
+        target = self.dataset(old)
+        if target is None or old == new:
+            return
+        dataio.validate_dataset_name(new, [d.name for d in self.datasets if d.name != old])
+        renamed = replace(target, name=new)
+        dataio.check_variable_conflicts(renamed, self.datasets)
+        target.name = new
+        self._datasets_edited()
+
+    def refresh_dataset(self, name: str, base_dir: str | Path | None = None) -> list[str]:
+        """Re-read the stored source with the stored options and units. Returns messages
+        (warnings and a columns-changed note). On failure raises DataImportError and leaves the
+        dataset unchanged."""
+        old = self.dataset(name)
+        if old is None:
+            raise dataio.DataImportError(f"There is no dataset named '{name}'.")
+        if not old.source:
+            raise dataio.DataImportError("This dataset has no source file to refresh from.")
+        path = Path(old.source)
+        if not path.is_absolute() and base_dir is not None:
+            path = Path(base_dir) / path
+        units = {c.name: c.unit for c in old.columns if c.kind == "number"}
+        new = dataio.read_table(path, old.options, name=name, units=units)
+        new.source = old.source
+        messages = list(new.warnings)
+        before = {c.name for c in old.columns}
+        after = {c.name for c in new.columns}
+        if before != after:
+            parts = []
+            if before - after:
+                parts.append("removed " + ", ".join(f"'{n}'" for n in sorted(before - after)))
+            if after - before:
+                parts.append("added " + ", ".join(f"'{n}'" for n in sorted(after - before)))
+            messages.append("Columns changed: " + "; ".join(parts) + ".")
+        self.datasets[self.datasets.index(old)] = new
+        self._datasets_edited()
+        return messages
 
     # -- document I/O ------------------------------------------------------------
 
@@ -698,7 +765,7 @@ class Worksheet(QGraphicsScene):
         wires = [WireData(w.source.component_name, w.source_port, w.dest.component_name, w.dest_port)
                  for w in self._wires]
         return SheetDocument(regions=regs, significant=self.engine.significant, wires=wires,
-                             page_breaks=self.page_break_ys())
+                             page_breaks=self.page_break_ys(), datasets=list(self.datasets))
 
     def load_document(self, doc: SheetDocument) -> None:
         self._drop_move()
@@ -706,6 +773,8 @@ class Worksheet(QGraphicsScene):
         for b in sorted(doc.page_breaks):
             self._add_marker(b)
         self.engine.significant = doc.significant
+        self.datasets = list(doc.datasets)
+        self.datasetsChanged.emit()
         by_name: dict[str, ComponentRegion] = {}
         for rd in doc.regions:
             if rd.kind == "component":
@@ -746,7 +815,8 @@ class Worksheet(QGraphicsScene):
         start = time.perf_counter()
         evaluated = [r for r in self.ordered_regions() if isinstance(r, (MathRegion, PlotRegion))]
         results = self.engine.evaluate(
-            (id(r), engine_source(r.source) if isinstance(r, PlotRegion) else r.source) for r in evaluated)
+            ((id(r), engine_source(r.source) if isinstance(r, PlotRegion) else r.source)
+             for r in evaluated), datasets=self.datasets)
         errors = 0
         for r in evaluated:
             res = results.get(id(r))

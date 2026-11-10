@@ -366,13 +366,14 @@ def test_c14_band_content():
     _close(w)
 
 
-@pytest.mark.parametrize("k", [8, 9])  # spec 026: tabs 3, 4 functional
+@pytest.mark.parametrize("k", [8, 9])  # spec 026/028: Outline and Data are functional
 def test_c15_placeholder_pages(k):
     w = _win(1000)
     page = w.side_panel.tabs.widget(k)
-    assert not page.findChildren(QPushButton)
     labels = page.findChildren(QLabel)
-    assert len(labels) == 1 and labels[0].text()
+    assert len(labels) == 1 and labels[0].text()   # empty-state message
+    # Outline has no buttons when empty; Data has only its four action buttons (spec 028)
+    assert len(page.findChildren(QPushButton)) == (0 if k == 8 else 4)
     _close(w)
 
 

@@ -353,4 +353,4 @@ def test_tab_order_and_data_still_placeholder(win):
     names = [tabs.tabText(i) for i in range(tabs.count())]
     assert len(names) == 10 and names[OUTLINE] == "Outline" and names[DATA] == "Data"
     assert len(tabs.widget(DATA).findChildren(QLabel)) == 1
-    assert tabs.widget(DATA).findChildren(QPushButton) == []
+    assert len(tabs.widget(DATA).findChildren(QPushButton)) == 4   # spec 028 action buttons

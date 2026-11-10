@@ -237,7 +237,8 @@ def test_labels_tokens_tooltips_exact_and_ordered(tab):
 def test_all_labels_unique_across_whole_panel():
     # SidePanel.symbol_buttons is keyed by label: a duplicate label would hide a button from lookups
     panel, _ = _panel()
-    every = [b.text() for i in range(panel.tabs.count())
+    # The Data page (spec 028) holds its own action/dataset buttons, outside the static registry.
+    every = [b.text() for i in range(panel.tabs.count()) if panel.tabs.tabText(i) != "Data"
              for b in panel.tabs.widget(i).findChildren(QPushButton)]
     assert len(every) == len(set(every))
     assert len(panel.symbol_buttons) == len(every)

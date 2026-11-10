@@ -29,9 +29,11 @@ from PySide6.QtWidgets import (
 
 from .. import __version__
 from ..document import FILE_SUFFIX, DocumentError, SheetDocument
+from ..engine.dataio import DataImportError
 from .icons import glyph_icon
 from .toolbarstyle import ToolbarStyler
 from .paths import default_save_path, remembered_dir
+from .importdialog import ImportDataDialog
 from .regions import MathRegion
 from .sidepanel import SidePanel
 from .theme import MODE_DARK, MODE_LIGHT, MODE_SYSTEM, apply_theme
@@ -224,6 +226,7 @@ class MainWindow(QMainWindow):
         m.addAction(self._action("&Component…",
                                   lambda: self.sheet.insert_component_at(self.sheet.crosshair.pos()),
                                   "Ctrl+Shift+C"))
+        m.addAction(self._action("&Data from file…", self.import_data))
         m.addAction(self._action("Page &Break", lambda: self.sheet.insert_page_break(), "Ctrl+Return"))
         m.addSeparator()
         for label, token in ((":=  Definition", ":= "), ("≡  Global definition", "≡ "),
@@ -284,6 +287,10 @@ class MainWindow(QMainWindow):
         # -- side panel (phase G2) --------------------------------------------------
         self.side_panel = SidePanel(self.insert_token, self)
         self.side_panel.attach_sheet(self.sheet, self.view)
+        self.side_panel.dataImportRequested.connect(self.import_data)
+        self.side_panel.dataRefreshRequested.connect(self.refresh_data)
+        self.side_panel.dataRenameRequested.connect(self.rename_data)
+        self.side_panel.dataRemoveRequested.connect(self.remove_data)
         self._central_layout.insertWidget(0, self.side_panel)   # strip+band above the canvas
         self.view.setMinimumWidth(400)
         # The active tab and the panel's visibility are tracked in our own settings keys.
@@ -328,6 +335,64 @@ class MainWindow(QMainWindow):
             region = self.sheet.insert_region("math")
         region.editor.textCursor().insertText(token)
         region.editor.setFocus()
+
+    # -- datasets (spec 028) -------------------------------------------------------------
+
+    def import_data(self) -> None:
+        dlg = ImportDataDialog([d.name for d in self.sheet.datasets], self,
+                               existing_datasets=self.sheet.datasets)
+        try:
+            if dlg.exec() == ImportDataDialog.DialogCode.Accepted:
+                self.add_imported(dlg.result_dataset())
+        finally:
+            dlg.deleteLater()
+
+    def add_imported(self, dataset) -> None:
+        """Add a dataset from the dialog, select it in the Data tab; inserts no region."""
+        if dataset is None:
+            return
+        self.sheet.add_dataset(dataset)
+        self.side_panel.select_dataset(dataset.name)
+
+    def _sheet_dir(self) -> Path | None:
+        return self.path.resolve().parent if self.path else None
+
+    def refresh_data(self, name: str) -> list[str]:
+        """Refresh from the stored source; the outcome is shown in the status bar or a message."""
+        try:
+            notes = self.sheet.refresh_dataset(name, self._sheet_dir())
+        except DataImportError as exc:
+            QMessageBox.warning(self, "Refresh failed", str(exc))
+            return [str(exc)]
+        if notes:
+            QMessageBox.information(self, "Refreshed", "\n".join(notes))
+        else:
+            self.statusBar().showMessage(f"Refreshed {name}", 3000)
+        return notes
+
+    def rename_data(self, name: str) -> None:
+        new, ok = QInputDialog.getText(
+            self, "Rename dataset",
+            f"New name for '{name}'. Formulas that use the old names are not rewritten; "
+            "they will show 'not defined' errors.", text=name)
+        if ok:
+            self.apply_rename(name, new.strip())
+
+    def apply_rename(self, old: str, new: str) -> bool:
+        try:
+            self.sheet.rename_dataset(old, new)
+        except DataImportError as exc:
+            QMessageBox.warning(self, "Rename failed", str(exc))
+            return False
+        self.side_panel.select_dataset(new)
+        return True
+
+    def remove_data(self, name: str) -> None:
+        answer = QMessageBox.question(
+            self, "Remove dataset",
+            f"Remove dataset '{name}'? Formulas that use it will show errors.")
+        if answer == QMessageBox.StandardButton.Yes:
+            self.sheet.remove_dataset(name)
 
     def delete_selected(self) -> None:
         self.sheet.remove_regions([r for r in self.sheet.regions() if r.isSelected()])

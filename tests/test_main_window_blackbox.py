@@ -185,12 +185,12 @@ def test_criterion7_outline_and_data_tabs_hold_exactly_one_distinct_label_each()
     outline_widget = tabs.widget(8)
     data_widget = tabs.widget(9)
     assert [type(w) for w in outline_widget.findChildren(QPushButton)] == []
-    assert [type(w) for w in data_widget.findChildren(QPushButton)] == []
+    assert len(data_widget.findChildren(QPushButton)) == 4   # spec 028: Import/Refresh/Rename/Remove
     outline_labels = outline_widget.findChildren(QLabel)
     data_labels = data_widget.findChildren(QLabel)
     assert len(outline_labels) == 1 and len(data_labels) == 1
     assert outline_labels[0].text() == OUTLINE_PLACEHOLDER
-    assert data_labels[0].text() == DATA_PLACEHOLDER
+    assert data_labels[0].text() == DATA_PLACEHOLDER   # empty-state text since spec 028
     assert outline_labels[0].text() != data_labels[0].text()
     # no outline/dataset content exists on the sheet or document after exercising the tabs
     doc = win.sheet.to_document()
@@ -310,9 +310,9 @@ def test_criterion12_label_text_sequence_under_and_over_threshold(monkeypatch):
     calls.clear()
     real_evaluate = sheet.engine.evaluate
 
-    def slow_evaluate(items):
+    def slow_evaluate(items, **kwargs):
         time_module.sleep(0.35)
-        return real_evaluate(items)
+        return real_evaluate(items, **kwargs)
 
     monkeypatch.setattr(sheet.engine, "evaluate", slow_evaluate)
     sheet.recalculate()   # slow pass: must flash "Calculating..." before the final text

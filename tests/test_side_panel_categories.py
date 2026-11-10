@@ -139,7 +139,8 @@ def test_criterion6_outline_and_data_tabs_are_placeholder_only():
     tabs = win.side_panel.tabs
     for index in (8, 9):   # Outline and Data remain placeholders (spec 026)
         widget = tabs.widget(index)
-        assert _buttons_of(widget) == []
+        # Data (spec 028) holds its four action buttons, Outline none when empty
+        assert len(_buttons_of(widget)) == (4 if index == 9 else 0)
         assert len(widget.findChildren(QLabel)) == 1
     sheet = win.sheet
     sheet.clear_sheet()

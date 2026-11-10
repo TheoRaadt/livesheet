@@ -194,9 +194,9 @@ def test_tab_order_and_placeholders_unchanged(win):
 
 def test_data_placeholder_unchanged(win):
     pg = page(win, "Data")
-    assert any(lb.text() == "Imported datasets will appear here once available."
-               for lb in pg.findChildren(QLabel))
-    assert not pg.findChildren(QPushButton)
+    # spec 028 replaced the placeholder with the empty state and four action buttons
+    assert any(lb.text().startswith("No data yet.") for lb in pg.findChildren(QLabel))
+    assert len(pg.findChildren(QPushButton)) == 4
 
 
 def test_outline_tab_not_populated_by_026(win):

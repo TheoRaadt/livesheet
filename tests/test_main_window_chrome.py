@@ -243,7 +243,8 @@ def test_criterion7_outline_and_data_tabs_are_placeholder_only():
         assert len(labels) == 1 and labels[0].text()
     # no outline/dataset state exists anywhere on the window or the sheet
     assert not any("outline" in n.lower() for n in dir(win) if not n.startswith("_"))
-    assert not any("dataset" in n.lower() for n in dir(win.sheet) if not n.startswith("_"))
+    # (the sheet has datasets since spec 028; a fresh sheet holds none)
+    assert win.sheet.datasets == []
     _close(win)
 
 
@@ -330,9 +331,9 @@ def test_criterion12_real_slow_recalculate_pass_shows_calculating(monkeypatch):
     sheet.add_region("math", QPointF(0, 0), "x := 1")
     real_evaluate = sheet.engine.evaluate
 
-    def slow_evaluate(items):
+    def slow_evaluate(items, **kwargs):
         time.sleep(0.35)
-        return real_evaluate(items)
+        return real_evaluate(items, **kwargs)
 
     monkeypatch.setattr(sheet.engine, "evaluate", slow_evaluate)
     sheet.recalculate()

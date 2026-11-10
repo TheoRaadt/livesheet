@@ -363,7 +363,7 @@ def test_criterion6_placeholder_tabs_have_no_clickable_widgets(tab_name):
     tabs = _tab_widget(win)
     idx = EXPECTED_TAB_ORDER.index(tab_name)
     widget = tabs.widget(idx)
-    assert widget.findChildren(QPushButton) == []
+    assert len(widget.findChildren(QPushButton)) == (4 if tab_name == "Data" else 0)   # spec 028
     labels = widget.findChildren(QLabel)
     assert len(labels) == 1
     assert labels[0].alignment() & Qt.AlignmentFlag.AlignCenter
@@ -407,7 +407,7 @@ def test_criterion7_outline_and_data_are_sixth_and_seventh_and_still_placeholder
     assert tabs.tabText(9) == "Data"
     for idx in (8, 9):
         widget = tabs.widget(idx)
-        assert widget.findChildren(QPushButton) == []
+        assert len(widget.findChildren(QPushButton)) == (4 if idx == 9 else 0)   # spec 028
         assert len(widget.findChildren(QLabel)) == 1
     _close(win)
 

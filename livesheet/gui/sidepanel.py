@@ -12,11 +12,13 @@ category (today: Elements) keeps the small grey sub-header labels the old Symbol
 
 from __future__ import annotations
 
+from pathlib import Path
 from typing import Callable
 
 from PySide6.QtCore import QTimer, Qt, Signal
 from PySide6.QtGui import QAction
 from PySide6.QtWidgets import (
+    QHBoxLayout,
     QLabel,
     QPushButton,
     QScrollArea,
@@ -25,6 +27,7 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
+from ..engine import dataio
 from ..engine.formatting import GREEK
 from .tabstrip import FlowLayout, TabStrip
 
@@ -280,11 +283,11 @@ _BUTTON_STYLE = (
     "QPushButton:hover { border-color: rgba(128, 128, 128, 180); }"
 )
 _HEADER_STYLE = "color: #7a7a7a; font-weight: bold; font-size: 11px;"
-DATA_PLACEHOLDER = "Imported datasets will appear here once available."
+DATA_EMPTY = "No data yet. Import a CSV file to use its columns in formulas."
+DATA_PLACEHOLDER = DATA_EMPTY   # old name, kept for importers (spec 028)
+DATA_NO_MATRIX = "No combined matrix (columns have different units)"
 
-PLACEHOLDER_TABS: dict[str, str] = {
-    "Data": DATA_PLACEHOLDER,
-}
+PLACEHOLDER_TABS: dict[str, str] = {}
 
 TAB_ORDER: tuple[str, ...] = (
     "Elements", "Algebra", "Calculus", "Statistics", "Optimization", "Mechanical", "Electrical",
@@ -326,6 +329,11 @@ class SidePanel(QWidget):
     the band). The strip mirrors and drives ``tabs``.
     """
 
+    dataImportRequested = Signal()
+    dataRefreshRequested = Signal(str)
+    dataRenameRequested = Signal(str)
+    dataRemoveRequested = Signal(str)
+
     MARGIN = 4
     BAND_MAX_ROWS = 4
     BAND_MAX_FRACTION = 0.25
@@ -336,6 +344,9 @@ class SidePanel(QWidget):
         self._insert_token = insert_token
         self.symbol_buttons: dict[str, QPushButton] = {}
         self.outline_buttons: list[QPushButton] = []
+        self.data_buttons: dict[str, QPushButton] = {}   # dynamic dataset buttons, by variable name
+        self.data_headings: dict[str, QPushButton] = {}  # dataset name -> heading (selector)
+        self.selected_dataset = ""
         self._sheet = None
         self._view = None
         self._outline_timer = QTimer(self)
@@ -352,6 +363,10 @@ class SidePanel(QWidget):
             elif name == "Outline":
                 self._outline_scroll = self._new_outline_scroll(self._outline_message())
                 self.tabs.addTab(self._outline_scroll, name)
+            elif name == "Data":
+                self._data_scroll = self._new_outline_scroll(QWidget())
+                self.tabs.addTab(self._data_scroll, name)
+                self.rebuild_data()
             else:
                 self.tabs.addTab(_build_placeholder_tab(PLACEHOLDER_TABS[name]), name)
 
@@ -488,6 +503,8 @@ class SidePanel(QWidget):
         self._sheet = sheet
         self._view = view
         sheet.outlineDirty.connect(self._on_outline_dirty)
+        sheet.datasetsChanged.connect(self.rebuild_data)
+        self.rebuild_data()
 
     def _outline_selected(self) -> bool:
         return self.tabs.tabText(self.tabs.currentIndex()) == "Outline"
@@ -539,8 +556,125 @@ class SidePanel(QWidget):
         if self._sheet is not None:
             self._sheet.reveal_region(region)   # a stale region is a silent no-op
 
+    # -- data tab (spec 028) ----------------------------------------------------------
+
+    def select_dataset(self, name: str) -> None:
+        self.selected_dataset = name if name in self.data_headings else ""
+        for n, btn in self.data_headings.items():
+            btn.setChecked(n == self.selected_dataset)
+        self._update_data_buttons()
+
+    def _update_data_buttons(self) -> None:
+        on = bool(self.selected_dataset)
+        for btn in (self.data_refresh_button, self.data_rename_button, self.data_remove_button):
+            btn.setEnabled(on)
+
+    def _data_action(self, signal) -> None:
+        if self.selected_dataset:
+            signal.emit(self.selected_dataset)
+
+    @staticmethod
+    def _dataset_heading(ds) -> str:
+        shape = f"{ds.row_count} rows x {len(ds.columns)} columns"
+        return f"{ds.name} - {shape}" + (f" - {Path(ds.source).name}" if ds.source else "")
+
+    @staticmethod
+    def _column_tip(ds, col) -> str:
+        if col.kind != "number":
+            return "Text column, not usable in formulas"
+        unit = f", unit {col.unit}" if col.unit else ""
+        return (f"Column {col.name}, {len(col.values)} values{unit} "
+                f"(min {min(col.values):g}, max {max(col.values):g})")
+
+    def rebuild_data(self) -> None:
+        """Rebuild the Data page from the sheet's datasets (buttons live outside symbol_buttons)."""
+        datasets = list(self._sheet.datasets) if self._sheet is not None else []
+        self.data_buttons = {}
+        self.data_headings = {}
+        content = QWidget()
+        outer = QVBoxLayout(content)
+        outer.setContentsMargins(6, 6, 6, 6)
+        outer.setSpacing(4)
+        top = QHBoxLayout()
+        self.data_import_button = QPushButton("Import...")
+        self.data_refresh_button = QPushButton("Refresh")
+        self.data_rename_button = QPushButton("Rename")
+        self.data_remove_button = QPushButton("Remove")
+        for btn in (self.data_import_button, self.data_refresh_button, self.data_rename_button,
+                    self.data_remove_button):
+            btn.setStyleSheet(_BUTTON_STYLE)
+            top.addWidget(btn)
+        top.addStretch(1)
+        self.data_import_button.clicked.connect(lambda _c=False: self.dataImportRequested.emit())
+        self.data_refresh_button.clicked.connect(
+            lambda _c=False: self._data_action(self.dataRefreshRequested))
+        self.data_rename_button.clicked.connect(
+            lambda _c=False: self._data_action(self.dataRenameRequested))
+        self.data_remove_button.clicked.connect(
+            lambda _c=False: self._data_action(self.dataRemoveRequested))
+        outer.addLayout(top)
+        self.data_empty_label = None
+        if not datasets:
+            self.data_empty_label = QLabel(DATA_EMPTY)
+            self.data_empty_label.setObjectName("data-empty")
+            self.data_empty_label.setWordWrap(True)
+            self.data_empty_label.setStyleSheet("color: #9a9a9a;")
+            outer.addWidget(self.data_empty_label)
+        for ds in datasets:
+            outer.addWidget(self._dataset_block(ds))
+        outer.addStretch(1)
+        self._data_scroll.setWidget(content)
+        self.select_dataset(self.selected_dataset)
+        if hasattr(self, "band"):
+            self.update_band_height()
+
+    def _dataset_block(self, ds) -> QWidget:
+        block = QWidget()
+        lay = QVBoxLayout(block)
+        lay.setContentsMargins(0, 0, 0, 0)
+        lay.setSpacing(2)
+        heading = QPushButton(self._dataset_heading(ds))
+        heading.setFlat(True)
+        heading.setCheckable(True)
+        heading.setStyleSheet(_HEADER_STYLE + " text-align: left; border: none;")
+        opts = ds.options
+        heading.setToolTip(f"{ds.source or '(no source file)'}\ndelimiter {opts.delimiter!r}, "
+                           f"decimal {opts.decimal!r}, header {opts.has_header}, "
+                           f"skip {opts.skip_lines}, {opts.encoding}")
+        heading.clicked.connect(lambda _c=False, n=ds.name: self.select_dataset(n))
+        self.data_headings[ds.name] = heading
+        lay.addWidget(heading)
+        row = QWidget()
+        flow = FlowLayout(row, margin=0, spacing=4)
+        for col in ds.columns:
+            var = dataio.column_variable_name(ds, col)
+            btn = QPushButton(var)
+            btn.setStyleSheet(_BUTTON_STYLE)
+            btn.setToolTip(self._column_tip(ds, col))
+            if col.kind == "number":
+                btn.clicked.connect(lambda _c=False, t=var: self._insert_token(t))
+            else:
+                btn.setEnabled(False)
+            flow.add_widget(btn)
+            self.data_buttons[var] = btn
+        if dataio.combined_matrix_available(ds):
+            nums = sum(c.kind == "number" for c in ds.columns)
+            btn = QPushButton(ds.name)
+            btn.setStyleSheet(_BUTTON_STYLE)
+            btn.setToolTip(f"{ds.row_count} x {nums} matrix of all numeric columns")
+            btn.clicked.connect(lambda _c=False, t=ds.name: self._insert_token(t))
+            flow.add_widget(btn)
+            self.data_buttons[ds.name] = btn
+        lay.addWidget(row)
+        if not dataio.combined_matrix_available(ds):
+            note = QLabel(DATA_NO_MATRIX)
+            note.setObjectName("data-no-matrix")
+            note.setStyleSheet("color: #9a9a9a; font-size: 11px;")
+            lay.addWidget(note)
+        return block
+
 
 __all__ = [
     "SidePanel", "MATH_TOKENS", "TAB_CATEGORIES", "TAB_ORDER", "PLACEHOLDER_TABS",
-    "OUTLINE_PLACEHOLDER", "DATA_PLACEHOLDER"
+    "OUTLINE_PLACEHOLDER", "DATA_PLACEHOLDER", "DATA_EMPTY", "DATA_NO_MATRIX"
 ]
