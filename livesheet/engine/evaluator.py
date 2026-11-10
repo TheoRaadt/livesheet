@@ -20,7 +20,7 @@ import re
 
 from .plotting import PlotData, build_plot
 from .formatting import format_expr, format_number, format_value
-from . import matrices, odesolver, solver, stats_tests, truss
+from . import dataio, matrices, odesolver, solver, stats_tests, truss
 from .matrices import MATRIX_BUILTINS, rewrite_brackets, wrap
 from .statistics import STATS_BUILTINS
 from .syntax import Statement, StatementError, parse_statement
@@ -149,6 +149,7 @@ class Engine:
     def __init__(self, significant: int = 6):
         self.significant = significant
         self._grid: tuple[list[list[str]], str] | None = None  # cells of the last matrix result
+        self._dataset_names: frozenset[str] = frozenset()   # variables seeded from datasets
 
     # -- parsing -------------------------------------------------------------
 
@@ -193,8 +194,12 @@ class Engine:
 
     # -- evaluation ----------------------------------------------------------
 
-    def evaluate(self, regions: Iterable[tuple[Hashable, str]]) -> dict[Hashable, RegionResult]:
-        """Evaluate ``(key, source)`` pairs given in reading order."""
+    def evaluate(self, regions: Iterable[tuple[Hashable, str]],
+                 datasets: Iterable[dataio.Dataset] | None = None) -> dict[Hashable, RegionResult]:
+        """Evaluate ``(key, source)`` pairs given in reading order.
+
+        ``datasets`` (spec 028) are already-read in-memory datasets; their columns are seeded into
+        the global environment as ordinary variables, right after the unit table."""
         regions = list(regions)
         results: dict[Hashable, RegionResult] = {}
         statements: dict[Hashable, Statement] = {}
@@ -211,6 +216,11 @@ class Engine:
 
         # Pass 1: global definitions, in reading order, visible to every region.
         env: dict = dict(UNITS)
+        seeded: dict = {}
+        for dataset in datasets or ():
+            seeded.update(dataio.dataset_variables(dataset))
+        env.update(seeded)
+        self._dataset_names = frozenset(seeded)
         for key, _ in regions:
             st = statements.get(key)
             if st is not None and _is_global(st):
@@ -396,6 +406,9 @@ class Engine:
         try:
             if st.kind == "empty":
                 return RegionResult("empty")
+            if st.kind in ("define", "global", "range") and st.name in self._dataset_names:
+                raise StatementError(f"'{st.name}' is a dataset column and cannot be redefined; "
+                                     "rename the variable or the dataset.")
             if st.kind in ("define", "global"):
                 if not st.params:
                     _check_bare_units(st.expr, env)

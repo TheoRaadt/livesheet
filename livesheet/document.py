@@ -6,13 +6,19 @@ import json
 from dataclasses import dataclass, field
 from pathlib import Path
 
+import os
+
+from .engine import dataio
+from .engine.dataio import DataImportError, Dataset
 from .engine.pagination import order_key
 
 FORMAT_NAME = "livesheet"
 FORMAT_VERSION = 1              # written for sheets without plots or components
 FORMAT_VERSION_PLOT = 2         # written when the sheet holds a plot (no components)
 FORMAT_VERSION_COMPONENTS = 3   # written when the sheet holds a component or wire
-FORMAT_VERSION_PAGES = 4        # written when the sheet has page breaks; highest we read
+FORMAT_VERSION_PAGES = 4        # written when the sheet has page breaks
+FORMAT_VERSION_DATASETS = 5     # written when the sheet holds a dataset (spec 028); highest we read
+STORAGE_EMBEDDED = "embedded"
 DEFAULT_PLOT_SIZE = (400.0, 260.0)
 FILE_SUFFIX = ".lsheet"
 
@@ -97,12 +103,56 @@ def _parse_page_breaks(raw: object) -> list[float]:
     return sorted(out)
 
 
+def _relative_source(source: str, base_dir: str | Path | None) -> str:
+    """Source label relative to the sheet folder when the file lies below it, else unchanged."""
+    if not source or base_dir is None or not os.path.isabs(source):
+        return source
+    try:
+        rel = Path(source).resolve().relative_to(Path(base_dir).resolve())
+    except (ValueError, OSError):
+        return source
+    return rel.as_posix()
+
+
+def _dataset_to_dict(dataset: Dataset, base_dir: str | Path | None) -> dict:
+    data = dataset.to_dict()
+    data["source"] = _relative_source(dataset.source, base_dir)
+    return data
+
+
+def _parse_datasets(raw: object) -> list[Dataset]:
+    """Strict: a broken dataset is a load error, never silently dropped."""
+    if raw is None:
+        return []
+    if not isinstance(raw, list):
+        raise DocumentError("Invalid dataset in file: 'datasets' is not a list")
+    out: list[Dataset] = []
+    for entry in raw:
+        if isinstance(entry, dict) and entry.get("storage", STORAGE_EMBEDDED) != STORAGE_EMBEDDED:
+            raise DocumentError("This file was made with a newer LiveSheet version")
+        try:
+            if isinstance(entry, dict) and "storage" not in entry:
+                raise DataImportError("missing key 'storage'")
+            dataset = Dataset.from_dict(entry)
+        except DataImportError as exc:
+            raise DocumentError(f"Invalid dataset in file: {exc}") from None
+        if any(d.name == dataset.name for d in out):
+            raise DocumentError(f"Invalid dataset in file: duplicate name '{dataset.name}'")
+        try:
+            dataio.check_variable_conflicts(dataset, out)
+        except DataImportError as exc:
+            raise DocumentError(f"Invalid dataset in file: {exc}") from None
+        out.append(dataset)
+    return out
+
+
 @dataclass
 class SheetDocument:
     regions: list[RegionData] = field(default_factory=list)
     significant: int = 6
     wires: list[WireData] = field(default_factory=list)
     page_breaks: list[float] = field(default_factory=list)   # y-coordinates, ascending
+    datasets: list[Dataset] = field(default_factory=list)    # embedded data (spec 028)
 
     def ordered(self) -> list[RegionData]:
         """Regions in evaluation order: page by page, left to right, then top to bottom.
@@ -112,7 +162,10 @@ class SheetDocument:
 
     def version(self) -> int:
         """Format version to write: 4 only when page breaks exist, else 3 only when a component or wire is present, else the
-        existing plot-or-not logic (2 / 1), completely unchanged for component-free sheets."""
+        existing plot-or-not logic (2 / 1), completely unchanged for component-free sheets.
+        5 (datasets) takes precedence and is a superset of 4."""
+        if self.datasets:
+            return FORMAT_VERSION_DATASETS
         if self.page_breaks:
             return FORMAT_VERSION_PAGES
         if any(r.kind == "component" for r in self.regions) or self.wires:
@@ -120,7 +173,7 @@ class SheetDocument:
         has_plot = any(r.kind == "plot" for r in self.regions)
         return FORMAT_VERSION_PLOT if has_plot else FORMAT_VERSION
 
-    def to_json(self) -> str:
+    def to_json(self, base_dir: str | Path | None = None) -> str:
         data = {
             "format": FORMAT_NAME,
             "version": self.version(),
@@ -134,6 +187,8 @@ class SheetDocument:
             data["wires"] = [w.to_dict() for w in self.wires]
         if self.page_breaks:
             data["page_breaks"] = [float(b) for b in sorted(self.page_breaks)]
+        if self.datasets:
+            data["datasets"] = [_dataset_to_dict(d, base_dir) for d in self.datasets]
         return json.dumps(data, indent=2, ensure_ascii=False)
 
     @classmethod
@@ -144,7 +199,7 @@ class SheetDocument:
             raise DocumentError(f"Not a valid LiveSheet file: {exc}") from None
         if not isinstance(data, dict) or data.get("format") != FORMAT_NAME:
             raise DocumentError("Not a LiveSheet file")
-        if int(data.get("version", 0)) > FORMAT_VERSION_PAGES:
+        if int(data.get("version", 0)) > FORMAT_VERSION_DATASETS:
             raise DocumentError("This file was made with a newer LiveSheet version")
         regions = []
         for raw in data.get("regions", []):
@@ -173,6 +228,7 @@ class SheetDocument:
             except (KeyError, TypeError, ValueError):
                 continue
         page_breaks = _parse_page_breaks(data.get("page_breaks"))
+        datasets = _parse_datasets(data.get("datasets"))
         settings = data.get("settings", {}) or {}
         sig = int(settings.get("significant", 6))
         # Version 3 is only meaningful when the file actually holds a component or a wire
@@ -185,11 +241,13 @@ class SheetDocument:
             any(r.kind == "component" for r in regions) or wires
         ):
             raise DocumentError("This file was made with a newer LiveSheet version")
+        if version == FORMAT_VERSION_DATASETS and not datasets:
+            raise DocumentError("This file was made with a newer LiveSheet version")
         return cls(regions=regions, significant=max(2, min(15, sig)), wires=wires,
-                   page_breaks=page_breaks)
+                   page_breaks=page_breaks, datasets=datasets)
 
     def save(self, path: str | Path) -> None:
-        Path(path).write_text(self.to_json(), encoding="utf-8")
+        Path(path).write_text(self.to_json(Path(path).resolve().parent), encoding="utf-8")
 
     @classmethod
     def load(cls, path: str | Path) -> "SheetDocument":
