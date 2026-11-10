@@ -251,6 +251,29 @@ the line that is wrong, as soon as you type it; the rest appear on the `verdict`
 | `No result region for hypothesis test "<name>" below this region` | A `sample`/`expected`/`claim`/`level` line is tagged `in <name>`, but no `verdict` line for that tag is below it. | Add a `verdict in <name>` line below every line of that test. |
 | `<name> is not defined` | A `sample`, `expected`, `claim` value or `level` uses a name not defined earlier on the sheet. | Define it above, or fix the typo. |
 
+## Optimization (solve models)
+
+See [Optimization](optimization.md). `<...>` stands for text from your sheet.
+
+| Message | Cause | Fix |
+|---|---|---|
+| `accuracy must be a positive number below 1` | The `accuracy` value is zero, negative, 1 or more. | Use a value such as `1e-8`. |
+| `steps must be a whole number of at least 1` | The `steps` value is not a whole number, or is below 1. | Use a whole number such as `200`. |
+| `"<x>" is declared twice in model "<m>"` | The same unknown is named in two `vary` lines or twice in one. | Declare each unknown once. |
+| `Starting guess for "<x>" must be a real number` | The guess is not a real number. | Give a real number, with a unit if needed. |
+| `Starting guess for "<x>" must be finite` | The guess is infinite or undefined. | Use an ordinary number. |
+| `No unknowns declared for model "<m>"` | A result line has no `vary` line with the same name. | Add `vary ... in <m>`, and check the names match. |
+| `<name> is not defined` | An equation or limit uses a name not defined above. | Define it above or fix the typo. |
+| `Cannot evaluate at the starting guess: ...` | The equations cannot be calculated at your guess (for example a division by zero), or the result is not finite. | Try a different starting guess. |
+| `Constraint "<line>" does not involve any unknown` | An equation or limit mentions none of the declared unknowns. | Include an unknown, or remove the line. |
+| `Objective "<expr>" does not involve any unknown` | The `least`/`most` expression mentions no unknown. | Use an expression with an unknown. |
+| `Units do not match in constraint "<line>"` | Both sides of an equation or limit have different dimensions. | Fix the units. |
+| `No constraints declared for this model` | A `settle` line has no equation or limit. | Add at least one equation or limit. |
+| `Not converged: stopped after N function evaluations (steps limit S), largest violation V (try another starting guess or raise steps)` | The solver ran out of steps. | Change the starting guess or raise `steps`. |
+| `No solution found: the objective has no optimum within the constraints (unbounded or the solver did not converge)` | `least`/`most` has no bounded answer. | Add limits that bound the problem. |
+| `No solution found: closest point violates "<line>" by V` | No point satisfies all lines at once. | Check for contradicting equations or limits, or try another guess. |
+| `Solving needs the scipy package` | The solving library is not installed. | Install the SciPy package. |
+
 ## Pages and page breaks
 
 This message appears in the status bar at the bottom left of the window (not on a region). See
@@ -271,6 +294,13 @@ the definition it needs shows `<name> is not defined` (see
 [Undefined names and bare units](#undefined-names-and-bare-units)). Move the definition or the
 region back, or place the definition further left or higher up in the same column. See
 [Moving regions](moving-regions.md).
+
+## The Statistics, Optimization and Outline tabs
+
+These tabs add no error messages of their own. The Statistics and Optimization buttons only insert
+text; problems show when the sheet recalculates, under [Statistics](#statistics) or
+[Optimization (solve models)](#optimization-solve-models). The Outline tab only lists headings; an
+empty list is a hint, not an error. See [The main window](main-window.md#the-outline-tab).
 
 ## The toolbar
 

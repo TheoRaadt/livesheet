@@ -13,8 +13,9 @@ It grows as features ship; a page only appears here once a feature is finished a
   which variable to run it over, axis limits and units, titles and labels.
 - [The main window](main-window.md) — the toolbar (larger icon-and-label buttons, picture-only and
   overflow chevron on narrow windows), the window-wide ten-tab strip that wraps onto more rows
-  when narrow, and its button band (Elements, Algebra, Calculus, the formula tabs, and placeholders
-  for Statistics/Optimization/Outline/Data), keyboard use, typing Greek letters and
+  when narrow, and its button band (Elements, Algebra, Calculus, Statistics, Optimization, the
+  formula tabs, the Outline tab that lists bold headings and jumps to them, and the Data
+  placeholder), keyboard use, typing Greek letters and
   subscripts, the status bar, and switching between a light, dark or system-following appearance.
 - [Vectors and matrices](matrices.md) — building a vector or matrix with the Matrix dialog instead
   of typing brackets by hand, and editing one you already have.
@@ -41,6 +42,8 @@ It grows as features ship; a page only appears here once a feature is finished a
   (one-sample t, Welch two-sample t, chi-square fit) with `sample`/`claim`/`level`/`verdict` lines;
   and regression (`fit_linear`, `fit_poly`, `predict`, `r_squared`) to fit a line or polynomial
   through paired data.
+- [Optimization](optimization.md) - solving equations and finding a smallest or largest value with
+  `vary`/`settle`/`least`/`most` lines, and the Optimization tab's template buttons.
 - [Moving regions](moving-regions.md) - dragging regions (click then drag, grabbing the frame
   while editing, moving a group), grid snapping, Esc to cancel, arrow-key and Shift+arrow nudging,
   and how a move changes the calculation order.

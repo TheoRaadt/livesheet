@@ -81,10 +81,12 @@ Switching tabs never takes the keyboard focus away from a region you are editing
 ### The button band
 
 - The band shows only the selected tab's buttons, using the window's width: buttons flow left to
-  right and wrap to further rows. Tabs with groups (Elements, Mechanical, Electrical, Chemical)
+  right and wrap to further rows. Tabs with groups (Elements, Statistics, Optimization,
+  Mechanical, Electrical, Chemical)
   show each group's small grey heading, and each group starts on a new row. Algebra and Calculus
   have no heading.
-- Statistics, Optimization, Outline and Data show only a short grey message for now (see below).
+- Statistics and Optimization show groups of function and line templates, Outline lists your
+  sheet's headings, and only Data still shows just a short grey message (see below).
 - The band stays the same height when you switch tabs, so the canvas does not jump. It gets taller
   or shorter only when you resize the window. It never grows past about four rows of buttons (or a
   quarter of the window's height, if that is larger); a tab with more buttons than that scrolls up
@@ -112,13 +114,59 @@ happens whether you click the button or use one of the keyboard shortcuts descri
   "Typing a subscript" below.
 - **Calculus** — `d/dx` (Derivative, inserts `diff(` — use it as `diff(expr, x)`) and `∫` (Integral,
   inserts `integrate(` — use it as `integrate(expr, x)` or `integrate(expr, x, a, b)`).
-- **Statistics** and **Optimization** — placeholders for now: "Statistical tools (descriptive
-  statistics, distributions, hypothesis tests, regression) will appear here once available." and
-  "Optimization tools (nonlinear and constrained optimization) will appear here once available."
-  They don't do anything yet; they're reserved spots for features that haven't shipped.
-- **Outline** and **Data** — placeholders for now ("Document outline will appear here once
-  headings are available." and "Imported datasets will appear here once available."); they don't
-  do anything yet, and will be filled in once document outlines and dataset import ship.
+- **Statistics** — 37 buttons in four groups, each inserting a ready-to-edit template: *Summary
+  statistics* (10), *Distributions* (16), *Hypothesis tests* (7) and *Regression* (4). Hover a
+  button for a one-line meaning. See [Statistics](statistics.md#the-statistics-tab).
+- **Optimization** — 9 buttons in three groups for solve models: *Unknowns and constraints*,
+  *Settings (optional)* and *Results*. See [Optimization](optimization.md).
+- **Outline** — a list of your sheet's headings; click one to jump to it. See
+  [The Outline tab](#the-outline-tab) below.
+- **Data** — still a placeholder that only says "Imported datasets will appear here once
+  available."; it does nothing yet.
+
+The template buttons put readable stand-in names into the line, for example `mean(v)`. After
+clicking, replace the stand-ins (`v`) with your own names.
+
+### The Outline tab
+
+The Outline tab is a table of contents for your sheet. It lists every text region whose **first
+paragraph is entirely bold**, and clicking an entry takes you to that region.
+
+**Making a heading.** Click into a text region, make its first line bold (select it and press
+`Ctrl+B`) and leave editing. If only part of the first paragraph is bold (say just the first
+word), the region is not a heading. Math, plot and component regions never appear in the outline.
+The outline has one flat list, with no levels.
+
+**Using it.**
+
+1. Click the **Outline** tab. One button appears per heading.
+2. Click a button. The region is selected and the canvas scrolls so it sits near the top of the
+   window. Your zoom does not change, and if you were typing in a region you keep typing there.
+
+**What the entries look like.** The button shows the heading's text, with extra whitespace
+squeezed together; text longer than 32 characters is cut off with an ellipsis (`…`). Hover for the
+full text and the page number.
+
+**Order and pages.** Entries are in reading order: page by page (pages are split by
+[page breaks](pages.md)), then top to bottom, then left to right. If your sheet has page breaks,
+each page that has at least one heading gets a small grey header, "Page 1", "Page 2", and so on.
+A sheet without page breaks shows no page headers. Two headings with the same text are both
+listed.
+
+**Worked example.** You have three text regions, "Intro" (all bold), "Some prose" (not bold) and
+"Results" (bold). The Outline tab shows two buttons, **Intro** and **Results**. Clicking
+**Results** jumps to it.
+
+**Empty sheet.** If there is nothing to list, the band shows: "No headings yet. Make the first
+line of a text region bold (Ctrl+B) to list it here."
+
+**When it updates.** The list is rebuilt when you select the Outline tab, when a sheet is opened
+or cleared, and, while the Outline tab is showing, shortly (about a third of a second) after you
+add, delete or move a region, edit text, or change a page break. While another tab is showing,
+nothing is recomputed. If you delete a heading, its button disappears at the next update, and
+clicking a button for a region that is already gone does nothing.
+
+The outline is worked out from your text; nothing extra is saved in the file.
 
 LiveSheet remembers whether the strip and band are shown and which tab was selected, and restores
 both the next time you open it. (If you're upgrading from an older version, the first time you

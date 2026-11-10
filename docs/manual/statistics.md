@@ -7,10 +7,38 @@ or a polynomial through paired data (see [Regression](#regression-fitting-a-line
 Except for the tests, everything here is an ordinary function you type into a math region, the same
 way you already type `sin(x)` or `sqrt(x)`. There is nothing to insert and no dialog.
 
-The **Statistics** tab in the tab strip has no buttons yet. Type the functions by hand.
+You can type everything by hand, or click a button in the **Statistics** tab (see below).
 
 Results print with 6 significant digits (for example `4.57143`, not `4.571429`). The value inside
 the sheet is more precise than what is shown.
+
+## The Statistics tab
+
+Click a button and its template is inserted at the cursor in the math region you are editing (or
+in a new one). The template uses stand-in names; replace them with your own. For example, with the
+cursor after `a := ` in a region, clicking **mean** gives `a := mean(v)`; change `v` to your list.
+Hover over a button for a short explanation. The buttons are in four groups:
+
+- **Summary statistics** (10): `mean`, `median`, `mode`, `variance`, `stdev`,
+  `population_variance`, `population_stdev`, `quantile` (inserts `quantile(v, p)`), `covariance`
+  (`covariance(u, w)`) and `correlation` (`correlation(u, w)`).
+- **Distributions** (16), four per family in this order: density or mass, cumulative, quantile,
+  random sample. Families: `normal`, `uniform`, `binomial`, `poisson`. For example the
+  `normal_pdf` button inserts `normal_pdf(x, mu, sigma)` and `binomial_sample` inserts
+  `binomial_sample(n_trials, p, n, seed)`. Remember that these take plain numbers only, and the
+  binomial and Poisson `k` must be a whole number of 0 or more.
+- **Hypothesis tests** (7): each button inserts one line of a test, so click a button once per
+  line, each in its own region, and use the same name after `in` on every line (the buttons use
+  `t1`; rename it). The buttons are `sample` (`sample v in t1`), `expected`
+  (`expected counts in t1`), `claim mean` (`claim mean == 0 in t1`), `claim two means`
+  (`claim mean1 == mean2 in t1`), `claim fits` (`claim fits in t1`), `level`
+  (`level 0.05 in t1`) and `verdict` (`verdict in t1`). See [Hypothesis tests](#hypothesis-tests)
+  for how the lines fit together.
+- **Regression** (4): `fit_linear` (`fit_linear(x, y)`), `fit_poly` (`fit_poly(x, y, 2)`),
+  `predict` (`predict(c, x)`) and `r_squared` (`r_squared(c, x, y)`).
+
+A button never checks anything. If you click **verdict** before any **sample** line, you get the
+usual message from [Hypothesis tests](errors.md#hypothesis-tests).
 
 ## Summarising a list of measurements
 
