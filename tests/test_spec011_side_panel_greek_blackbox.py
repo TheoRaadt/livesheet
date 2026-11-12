@@ -715,6 +715,8 @@ def test_criterion15_ctrl_alt_used_only_by_the_23_greek_layer2_actions():
     for act in win.findChildren(QAction):
         seq = act.shortcut().toString()
         if seq.startswith("Ctrl+Alt+") and not seq.startswith("Ctrl+Alt+Shift+"):
+            if seq == "Ctrl+Alt+4":
+                continue   # spec 032 L2: Insert > Formula (inline); digits are outside the letter layers
             assert act.text() in GREEK_LOWER_NAMES, (
                 f"unexpected non-Greek action {act.text()!r} using a Ctrl+Alt+ shortcut: {seq}"
             )

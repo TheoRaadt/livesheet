@@ -19,9 +19,12 @@ import math
 import re
 
 from .plotting import PlotData, build_plot
+from .surface import SurfaceData, build_surface
 from .formatting import format_expr, format_number, format_value
 from . import dataio, matrices, odesolver, solver, stats_tests, truss
 from .matrices import MATRIX_BUILTINS, rewrite_brackets, wrap
+from .electrical import ELEC_BUILTINS
+from .mecheng import MECH_BUILTINS
 from .statistics import STATS_BUILTINS
 from .syntax import Statement, StatementError, parse_statement
 from .units import BASE_UNIT_BY_DIM, UNITS, Measured, UnitError, dims_to_text, measure
@@ -81,6 +84,8 @@ def _builtins() -> dict:
             g[name] = _scalar_only(name, fn)
     g.update(MATRIX_BUILTINS)
     g.update(STATS_BUILTINS)
+    g.update(MECH_BUILTINS)
+    g.update(ELEC_BUILTINS)
     return g
 
 
@@ -141,6 +146,7 @@ class RegionResult:
     grid: list[list[str]] = field(default_factory=list)    # matrix result cells (not set for placeholders)
     grid_unit: str = ""     # unit text printed after a matrix grid
     plot: PlotData | None = None   # plot statements: chart data
+    surface: SurfaceData | None = None   # surface statements: 3-D chart data (spec 031)
 
 
 class Engine:
@@ -427,6 +433,10 @@ class Engine:
                 data = build_plot(st, env, self)
                 n = len(data.traces)
                 return RegionResult("ok", f"plot {n} traces, {len(data.traces[0].x)} points", plot=data)
+            if st.kind == "surface":
+                sdata = build_surface(st, env, self)
+                return RegionResult("ok", f"surface {len(sdata.xs)} x {len(sdata.ys)} points",
+                                    surface=sdata)
             if st.kind == "evaluate":
                 _check_bare_units(st.expr, env)
                 value = self.parse(st.expr, env)

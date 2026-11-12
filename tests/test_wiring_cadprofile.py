@@ -234,7 +234,7 @@ def test_criterion9_unknown_unit_override(tmp_path, engine):
     assert result["P1"].status == "error"
     assert result["P1"].error == (
         "Unknown length unit 'banana'; use one of LiveSheet's existing length units, "
-        "e.g. 'mm', 'm', 'inch'.")
+        "e.g. 'mm', 'm', 'km'.")
 
 
 # ===========================================================================
@@ -559,4 +559,4 @@ def test_spec014_criterion8_spec013_regression_through_wiring(tmp_path, engine):
     assert result2.status == "error"
     assert result2.error == (
         "Unknown length unit 'banana'; use one of LiveSheet's existing length units, "
-        "e.g. 'mm', 'm', 'inch'.")
+        "e.g. 'mm', 'm', 'km'.")

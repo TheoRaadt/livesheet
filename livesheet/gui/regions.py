@@ -2,19 +2,26 @@
 
 from __future__ import annotations
 
-from PySide6.QtCore import QEvent, QPointF, QRectF, Qt, Signal
+import logging
+from dataclasses import dataclass
+
+from PySide6.QtCore import QEvent, QPointF, QRectF, Qt, QTimer, Signal
 from PySide6.QtGui import (
     QColor,
     QFont,
+    QFontInfo,
     QFontMetricsF,
     QKeyEvent,
     QPainter,
     QPen,
+    QTextCharFormat,
     QTextCursor,
+    QTextDocument,
 )
 from PySide6.QtWidgets import (
     QGraphicsItem,
     QGraphicsObject,
+    QGraphicsSimpleTextItem,
     QGraphicsTextItem,
     QStyleOptionGraphicsItem,
 )
@@ -25,6 +32,9 @@ from ..engine import completion
 from .completion_popup import CompletionPopup
 from .keys import colon_edit
 from .pretty import display_source, pretty_source_html
+from .texlayout import (TEX_OBJ_TYPE, TEX_PROP_INDEX, FormulaItem, FormulaObject, layout_formula,
+                        parse_source)
+from ..texmath import MAX_SPANS, TexError, scan
 
 GRID = 10
 PAD = 3
@@ -145,6 +155,8 @@ class Region(QGraphicsObject):
     def start_editing(self, scene_pos: QPointF | None = None) -> None:
         if self.editing:
             return
+        # The caret target is computed while the display layout is still in place (spec 032).
+        target = self._caret_target(scene_pos) if scene_pos is not None else None
         self.prepareGeometryChange()
         self.editing = True
         self.setCursor(Qt.CursorShape.OpenHandCursor)
@@ -154,7 +166,9 @@ class Region(QGraphicsObject):
         self.editor.setTextInteractionFlags(Qt.TextInteractionFlag.TextEditorInteraction)
         self.editor.setFocus(Qt.FocusReason.MouseFocusReason)
         cursor = self.editor.textCursor()
-        if scene_pos is not None:
+        if target is not None:
+            cursor.setPosition(max(0, min(target, self.editor.document().characterCount() - 1)))
+        elif scene_pos is not None:
             local = self.editor.mapFromScene(scene_pos)
             pos = self.editor.document().documentLayout().hitTest(local, Qt.HitTestAccuracy.FuzzyHit)
             cursor.setPosition(max(0, pos))
@@ -256,6 +270,11 @@ class Region(QGraphicsObject):
 
     def _leave_edit_display(self) -> None:
         pass
+
+    def _caret_target(self, scene_pos: QPointF) -> int | None:
+        """Document position for a double-click, computed before the document is swapped to
+        its edit form; None keeps the default hit test."""
+        return None
 
 
 class MathRegion(Region):
@@ -514,23 +533,438 @@ class MathRegion(Region):
         super()._relayout()
 
 
+TEXT_COLOR = QColor("#222222")
+CAPTION_FONT = QFont()
+CAPTION_FONT.setFamilies(["Helvetica Neue", "Segoe UI", "Arial", "sans-serif"])
+CAPTION_FONT.setPointSize(9)
+ERROR_MONO = ["Menlo", "Consolas", "DejaVu Sans Mono", "monospace"]
+EDIT_DEBOUNCE_MS = 250
+log = logging.getLogger(__name__)
+
+
+class _Caption(QGraphicsSimpleTextItem):
+    """One-line LaTeX error caption under a text region; never printed (spec 032 Q5)."""
+
+    def paint(self, painter: QPainter, option, widget=None) -> None:
+        scene = self.scene()
+        if scene is not None and getattr(scene, "printing", False):
+            return
+        super().paint(painter, option, widget)
+
+
+@dataclass
+class _Edit:
+    """One change between the raw document and the display document: raw ``[raw_start,
+    raw_end)`` became ``disp_len`` characters at ``disp_start``."""
+    raw_start: int
+    raw_end: int
+    disp_start: int
+    disp_len: int
+    obj_pos: int = -1          # display position of the formula object, -1 for escapes
+    delim: int = 1
+
+
 class TextRegion(Region):
-    """Free text (rich text) annotation."""
+    """Free text (rich text) annotation. ``$...$`` and ``$$...$$`` spans are typeset while the
+    region is not being edited (spec 032); the raw text is the only thing ever saved."""
 
     kind = "text"
 
     def __init__(self, html: str = ""):
         super().__init__()
+        self._canon_html: str | None = None     # raw HTML while the display document differs
+        self._display_active = False
+        self._off_hold = False                  # typesetting off: raw doc shown, canon kept
+        self._dirty = False
+        self._edits: list[_Edit] = []
+        self._formulas: list[FormulaItem] = []
+        self._raw_plain = ""
+        self._raw_doc: QTextDocument | None = None
+        self._raw_doc_html: str | None = None
+        self.errors: list[str] = []
+        self.caption_text = ""
+        self._debounce = QTimer(self)
+        self._debounce.setSingleShot(True)
+        self._debounce.setInterval(EDIT_DEBOUNCE_MS)
+        self._debounce.timeout.connect(self._check_edit_errors)
+        self._caption = _Caption("", self)
+        self._caption.setFont(CAPTION_FONT)
+        self._caption.setBrush(QColor(COLOR_ERROR))
+        self._caption.setVisible(False)
+        self._tex = FormulaObject(self._formula_at, lambda: TEXT_COLOR)
+        self.editor.document().documentLayout().registerHandler(TEX_OBJ_TYPE, self._tex)
         self.editor.setFont(TEXT_FONT)
-        self.editor.setDefaultTextColor(QColor("#222222"))
+        self.editor.setDefaultTextColor(TEXT_COLOR)
         if html:
             self.editor.setHtml(html)
+        self._rebuild_display(html or None)
+        self._relayout()
+
+    # -- raw copy accessors -------------------------------------------------------------------
 
     def text(self) -> str:
+        if self._canon_html is not None and (self._display_active or self._off_hold
+                                             or (self.editing and not self._dirty)):
+            return self._canon_html
         return self.editor.toHtml()
 
     def is_empty(self) -> bool:
+        if self._display_active:
+            return not self._raw_plain.strip()
         return not self.editor.toPlainText().strip()
+
+    def raw_document(self) -> QTextDocument:
+        """The document holding the raw source (the editor's own in edit state or when nothing
+        is typeset); used by the Outline tab so formulas show as their source."""
+        if not self._display_active or self._canon_html is None:
+            return self.editor.document()
+        if self._raw_doc is None or self._raw_doc_html != self._canon_html:
+            self._raw_doc = QTextDocument(self)
+            self._raw_doc.setHtml(self._canon_html)
+            self._raw_doc_html = self._canon_html
+        return self._raw_doc
+
+    def _formula_at(self, index: int) -> FormulaItem | None:
+        return self._formulas[index] if 0 <= index < len(self._formulas) else None
+
+    # -- building the display document --------------------------------------------------------
+
+    def _span_font(self, pos: int) -> QFont:
+        doc = self.editor.document()
+        cur = QTextCursor(doc)
+        cur.setPosition(max(0, min(pos, doc.characterCount() - 1)))
+        font = QFont(self.editor.font())
+        pt = cur.charFormat().fontPointSize()
+        if pt > 0:
+            font.setPointSizeF(pt)
+        return font
+
+    def typeset_enabled(self) -> bool:
+        """View setting "Typeset LaTeX in text regions" of the owning sheet (default on)."""
+        scene = self.scene()
+        return bool(getattr(scene, "typeset_latex", True)) if scene is not None else True
+
+    def refresh_typesetting(self) -> None:
+        """Re-apply the View setting (called when it changes or the region joins a sheet).
+        Editing regions are left alone; ``text()`` is the same before and after."""
+        if self.editing:
+            return
+        raw = self._canon_html
+        if self._display_active and raw is not None:
+            doc = self.editor.document()
+            doc.blockSignals(True)
+            try:
+                doc.setHtml(raw)
+            finally:
+                doc.blockSignals(False)
+        self._rebuild_display(raw)
+        self._relayout()
+
+    def itemChange(self, change, value):
+        result = super().itemChange(change, value)
+        if (change == QGraphicsItem.GraphicsItemChange.ItemSceneHasChanged and value is not None
+                and not self.typeset_enabled()):
+            self.refresh_typesetting()
+        return result
+
+    def insert_formula(self, display: bool) -> None:
+        """Insert ``$$`` (inline) or ``$$$$`` (display) at the caret, caret between the
+        delimiters; a selection is wrapped instead. Needs the region to be editing."""
+        if not self.editing:
+            return
+        delim = "$$" if display else "$"
+        cursor = self.editor.textCursor()
+        cursor.beginEditBlock()
+        if cursor.hasSelection():
+            start, end = cursor.selectionStart(), cursor.selectionEnd()
+            cursor.setPosition(end)
+            cursor.insertText(delim)
+            cursor.setPosition(start)
+            cursor.insertText(delim)
+            cursor.setPosition(end + 2 * len(delim))
+        else:
+            cursor.insertText(delim * 2)
+            cursor.setPosition(cursor.position() - len(delim))
+        cursor.endEditBlock()
+        self.editor.setTextCursor(cursor)
+
+    def _clear_display_state(self) -> None:
+        self._off_hold = False
+        self._display_active = False
+        self._edits = []
+        self._formulas = []
+        self._raw_plain = ""
+
+    def _rebuild_display(self, raw: str | None) -> None:
+        """Typeset the spans of the (raw) document in place. ``raw`` is the canonical HTML of the
+        current content when already known, else it is read from the document."""
+        self._clear_display_state()
+        doc = self.editor.document()
+        plain = doc.toPlainText()
+        if not self.typeset_enabled():
+            # View toggle off: the raw source is shown, nothing is scanned, text() is unchanged
+            self._canon_html = raw
+            self._off_hold = raw is not None
+            self._set_errors([])
+            return
+        try:
+            result = scan(plain)
+        except Exception:
+            log.exception("scanning text region for formulas failed")
+            result = None
+        if result is None or not (result.spans or result.escapes):
+            self._canon_html = None
+            self._set_errors([])
+            return
+        self._canon_html = raw if raw is not None else self.editor.toHtml()
+        self._raw_plain = plain
+        errors: list[tuple[int | None, TexError | str]] = []
+        ops: list[tuple[int, int, str, object]] = []
+        for number, sp in enumerate(result.spans, 1):
+            font = self._span_font(sp.start + 1)
+            size = float(QFontInfo(font).pixelSize())
+            try:
+                box = layout_formula(sp.source, size, sp.display)
+            except TexError as exc:
+                errors.append((number, exc))
+                ops.append((sp.start, sp.end, "bad", (sp, exc)))
+                continue
+            except Exception:
+                log.exception("formula layout failed")
+                exc = TexError("internal error in formula", 0)
+                errors.append((number, exc))
+                ops.append((sp.start, sp.end, "bad", (sp, exc)))
+                continue
+            fm = QFontMetricsF(font)
+            ops.append((sp.start, sp.end, "ok", (sp, FormulaItem(box, sp.display, (fm.ascent() - fm.descent()) / 2))))
+        if result.overflow:
+            errors.append((None, f"too many formulas in this region (limit {MAX_SPANS})"))
+        for pos in result.escapes:
+            ops.append((pos, pos + 1, "esc", None))
+        ops.sort(key=lambda o: o[0])
+        lens = self._apply_ops(ops)
+        shift = 0
+        for (start, end, kind, payload), (disp_len, lead) in zip(ops, lens):
+            if kind in ("ok", "esc"):
+                obj = -1
+                delim = 1
+                if kind == "ok":
+                    delim = payload[0].delim
+                    obj = start + shift + lead
+                self._edits.append(_Edit(start, end, start + shift, disp_len, obj, delim))
+            shift += disp_len - (end - start)
+        self._display_active = True
+        self._set_errors(errors)
+
+    def _apply_ops(self, ops: list) -> list[tuple[int, int]]:
+        """Apply the edits back to front; returns ``(display length, leading separators)`` of
+        each op."""
+        doc = self.editor.document()
+        lens = [(0, 0)] * len(ops)
+        doc.blockSignals(True)
+        try:
+            cursor = QTextCursor(doc)
+            cursor.beginEditBlock()
+            for idx in range(len(ops) - 1, -1, -1):
+                start, end, kind, payload = ops[idx]
+                if kind == "esc":
+                    cursor.setPosition(start)
+                    cursor.setPosition(end, QTextCursor.MoveMode.KeepAnchor)
+                    cursor.removeSelectedText()
+                    lens[idx] = (0, 0)
+                elif kind == "bad":
+                    self._mark_invalid(cursor, payload[0], payload[1])
+                    lens[idx] = (end - start, 0)
+                else:
+                    sp, item = payload
+                    lens[idx] = self._insert_formula(cursor, sp, item)
+            cursor.endEditBlock()
+        finally:
+            doc.blockSignals(False)
+        return lens
+
+    def _insert_formula(self, cursor: QTextCursor, sp, item: FormulaItem) -> tuple[int, int]:
+        doc = self.editor.document()
+        cursor.setPosition(min(sp.start + 1, doc.characterCount() - 1))
+        fmt = QTextCharFormat(cursor.charFormat())
+        fmt.setObjectType(TEX_OBJ_TYPE)
+        fmt.setProperty(TEX_PROP_INDEX, len(self._formulas))
+        fmt.setVerticalAlignment(QTextCharFormat.VerticalAlignment.AlignBottom)
+        self._formulas.append(item)
+        if not sp.display:
+            cursor.setPosition(sp.start)
+            cursor.setPosition(sp.end, QTextCursor.MoveMode.KeepAnchor)
+            cursor.insertText("\ufffc", fmt)
+            return 1, 0
+        lead = sp.start > doc.findBlock(sp.start).position()
+        cursor.setPosition(sp.start)
+        cursor.setPosition(sp.end, QTextCursor.MoveMode.KeepAnchor)
+        cursor.removeSelectedText()
+        if lead:
+            cursor.insertBlock()
+        obj_pos = cursor.position()
+        cursor.insertText("\ufffc", fmt)
+        trail = not cursor.atBlockEnd()
+        if trail:
+            cursor.insertBlock()
+        cursor.setPosition(obj_pos)
+        bf = cursor.blockFormat()
+        line = QFontMetricsF(self.editor.font()).height()
+        bf.setAlignment(Qt.AlignmentFlag.AlignHCenter)
+        bf.setTopMargin(0.6 * line)
+        bf.setBottomMargin(0.6 * line)
+        cursor.setBlockFormat(bf)
+        return 1 + (1 if lead else 0) + (1 if trail else 0), 1 if lead else 0
+
+    def _mark_invalid(self, cursor: QTextCursor, sp, exc: TexError) -> None:
+        cursor.setPosition(sp.start)
+        cursor.setPosition(sp.end, QTextCursor.MoveMode.KeepAnchor)
+        fmt = QTextCharFormat()
+        fmt.setFontFamilies(ERROR_MONO)
+        fmt.setForeground(QColor(COLOR_ERROR))
+        cursor.mergeCharFormat(fmt)
+        under = QTextCharFormat()
+        under.setUnderlineStyle(QTextCharFormat.UnderlineStyle.DotLine)
+        under.setUnderlineColor(QColor(COLOR_ERROR))
+        first = min(sp.end - 1, sp.src_start + exc.offset)
+        cursor.setPosition(first)
+        cursor.setPosition(sp.end, QTextCursor.MoveMode.KeepAnchor)
+        cursor.mergeCharFormat(under)
+
+    # -- errors / caption ---------------------------------------------------------------------
+
+    @staticmethod
+    def _describe(number: int | None, err: "TexError | str") -> str:
+        if isinstance(err, str):
+            return f"LaTeX: {err}"
+        return f"LaTeX: {err.message} (formula {number}, character {err.offset + 1})"
+
+    def _set_errors(self, errs: list) -> None:
+        lines = [self._describe(n, e) for n, e in errs]
+        self.errors = lines
+        if lines:
+            more = f" (+{len(lines) - 1} more)" if len(lines) > 1 else ""
+            self.caption_text = lines[0] + more
+        else:
+            self.caption_text = ""
+        self._caption.setText("⚠ " + self.caption_text if lines else "")
+        self._caption.setVisible(bool(lines))
+        self._has_error = bool(lines) and not self.editing
+        self.setToolTip("\n".join(lines))
+        self._relayout()
+
+    def _check_edit_errors(self) -> None:
+        """Parse every span of the text being edited and refresh the caption (debounced)."""
+        if not self.editing:
+            return
+        if not self.typeset_enabled():
+            self._set_errors([])
+            return
+        try:
+            result = scan(self.editor.toPlainText())
+        except Exception:
+            log.exception("scanning text region for formulas failed")
+            return
+        errs: list[tuple[int | None, TexError | str]] = []
+        for number, sp in enumerate(result.spans, 1):
+            try:
+                parse_source(sp.source)
+            except TexError as exc:
+                errs.append((number, exc))
+        if result.overflow:
+            errs.append((None, f"too many formulas in this region (limit {MAX_SPANS})"))
+        self._set_errors(errs)
+
+    # -- edit / display hooks -----------------------------------------------------------------
+
+    def _on_contents_changed(self) -> None:
+        if self.editing:
+            self._dirty = True
+            self._debounce.start()
+        super()._on_contents_changed()
+
+    def _enter_edit_display(self) -> None:
+        self._debounce.stop()
+        if self._display_active and self._canon_html is not None:
+            doc = self.editor.document()
+            doc.blockSignals(True)
+            try:
+                doc.setHtml(self._canon_html)
+            finally:
+                doc.blockSignals(False)
+        self._display_active = False
+        self._edits = []
+        self._formulas = []
+        self._dirty = False
+        self._has_error = False
+        self._check_edit_errors()
+
+    def _leave_edit_display(self) -> None:
+        self._debounce.stop()
+        raw = self._canon_html if (not self._dirty and self._canon_html is not None) else None
+        self._rebuild_display(raw)
+
+    def _relayout(self) -> None:
+        if hasattr(self, "_caption"):
+            self._caption.setPos(PAD, PAD + self.editor.boundingRect().height())
+        super()._relayout()
+
+    def paint(self, painter: QPainter, option: QStyleOptionGraphicsItem, widget=None) -> None:
+        scene = self.scene()
+        if scene is not None and getattr(scene, "printing", False) and self._has_error:
+            self._has_error = False          # the error tint is on-screen only
+            try:
+                super().paint(painter, option, widget)
+            finally:
+                self._has_error = True
+            return
+        super().paint(painter, option, widget)
+
+    # -- click to caret -----------------------------------------------------------------------
+
+    def _object_rect(self, edit: _Edit) -> QRectF | None:
+        doc = self.editor.document()
+        block = doc.findBlock(edit.obj_pos)
+        if not block.isValid():
+            return None
+        layout = block.layout()
+        rel = edit.obj_pos - block.position()
+        line = layout.lineForTextPosition(rel)
+        if not line.isValid():
+            return None
+        x0 = line.cursorToX(rel)[0]
+        x1 = line.cursorToX(rel + 1)[0]
+        origin = layout.position()
+        return QRectF(origin.x() + min(x0, x1), origin.y() + line.y(), abs(x1 - x0), line.height())
+
+    def _display_to_raw(self, pos: int) -> int:
+        delta = 0
+        for e in self._edits:
+            if pos < e.disp_start:
+                break
+            if pos < e.disp_start + e.disp_len:
+                return e.raw_start
+            delta = (e.disp_start + e.disp_len) - e.raw_end
+        return pos - delta
+
+    def _caret_target(self, scene_pos: QPointF) -> int | None:
+        if not self._display_active:
+            return None
+        try:
+            local = self.editor.mapFromScene(scene_pos)
+            for e in self._edits:
+                if e.obj_pos < 0:
+                    continue
+                rect = self._object_rect(e)
+                if rect is not None and rect.contains(local):
+                    if local.x() < rect.center().x():
+                        return e.raw_start + e.delim
+                    return e.raw_end - e.delim
+            pos = self.editor.document().documentLayout().hitTest(local, Qt.HitTestAccuracy.FuzzyHit)
+            return max(0, self._display_to_raw(max(0, pos)))
+        except Exception:
+            log.exception("caret mapping failed")
+            return None
 
     def handle_key(self, event: QKeyEvent) -> bool:
         mods = event.modifiers()

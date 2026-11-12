@@ -32,12 +32,12 @@ __all__ = [
 # ``$INSUNITS`` header variable -> this engine's own existing length-unit name. Codes not listed
 # here (0, 8, 9, missing, or anything else) have no mapping -- see ``_resolve_unit``.
 INSUNITS_TO_UNIT: dict[int, str] = {
-    1: "inch", 2: "ft", 3: "mi", 4: "mm", 5: "cm", 6: "m", 7: "km", 10: "yd",
+    4: "mm", 5: "cm", 6: "m", 7: "km",
 }
 
 # The subset of engine/units.py's UNITS table this component accepts for its own `unit`
 # configuration field -- linear length units only (matches the spec's own explicit list).
-_LENGTH_UNITS = ("m", "km", "cm", "mm", "um", "nm", "inch", "ft", "yd", "mi")
+_LENGTH_UNITS = ("m", "km", "cm", "mm", "um", "nm")
 
 _LOOP_KINDS = ("LWPOLYLINE", "POLYLINE")
 
@@ -498,7 +498,7 @@ def _resolve_unit(doc, unit: str) -> str:
         if unit not in _LENGTH_UNITS:
             raise CadProfileError(
                 f"Unknown length unit '{unit}'; use one of LiveSheet's existing length "
-                "units, e.g. 'mm', 'm', 'inch'.")
+                "units, e.g. 'mm', 'm', 'km'.")
         return unit
     insunits = doc.header.get("$INSUNITS")
     resolved = INSUNITS_TO_UNIT.get(insunits) if insunits is not None else None

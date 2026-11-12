@@ -21,5 +21,8 @@ livesheet = "livesheet.__main__:main"
 [tool.setuptools.packages.find]
 include = ["livesheet*"]
 
+[tool.setuptools.package-data]
+"livesheet.gui" = ["fonts/*.otf", "fonts/OFL.txt", "fonts/README.md"]
+
 [tool.pytest.ini_options]
 testpaths = ["tests"]

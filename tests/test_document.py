@@ -81,6 +81,8 @@ def test_demo_resave_unchanged_by_plot_support(tmp_path):
         # unconditionally by asdict(); the actual writer omits them for non-component regions
         # (same optional-field policy as w/h for plots), so strip them from the "old" baseline too.
         r.pop("component_name"), r.pop("component_kind"), r.pop("config")
+        # view_az/view_el/view_zoom: spec 031 phase B, written only for 3-D plot regions.
+        r.pop("view_az"), r.pop("view_el"), r.pop("view_zoom")
     assert doc.to_json() == json.dumps(old, indent=2, ensure_ascii=False)
     # and a second save/load cycle is a fixed point
     again = SheetDocument.from_json(doc.to_json()).to_json()

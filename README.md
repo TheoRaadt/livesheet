@@ -47,8 +47,8 @@ You can chain them: `expr → expand → factor`.
 **Functions:** `sin cos tan asin acos atan atan2 sinh cosh tanh exp ln log` (base 10) `sqrt root abs floor ceil
 mod Max Min factorial binomial re im conj arg diff integrate limit sum product solve`.
 
-**Units:** `m km cm mm um inch ft mi`, `kg gm mg tonne lb`, `s ms min hr day yr`, `N kN MN lbf`,
-`Pa kPa MPa GPa bar mbar atm psi`, `J kJ MJ Wh kWh MWh cal`, `W kW MW`, `A mA V kV ohm Ω C F uF Wb T H`,
+**Units:** `m km cm mm um nm`, `kg gm mg tonne`, `s ms min hr day yr`, `N kN MN`,
+`Pa kPa MPa GPa bar mbar atm`, `J kJ MJ Wh kWh MWh cal`, `W kW MW`, `A mA V kV ohm Ω C F uF Wb T H`,
 `Hz kHz MHz rpm`, `K mol cd`, `L mL ha`, `rad deg`, and `g` (standard gravity).
 Angles are dimensionless. If you define a variable with a unit's name (`s := 3`), your definition wins.
 
@@ -131,3 +131,9 @@ temperature units, real 2-D math typesetting.
 ## License
 
 Dual-licensed under either the MIT license ([LICENSE-MIT](LICENSE-MIT)) or the Apache License 2.0 ([LICENSE-APACHE](LICENSE-APACHE)), at your option.
+
+### Third-party notices
+
+- STIX Two Math font (`livesheet/gui/fonts/`), copyright The STIX Fonts Project Authors, licensed under the
+  SIL Open Font License 1.1 (`livesheet/gui/fonts/OFL.txt`). Bundled unmodified; provenance and checksums in
+  `livesheet/gui/fonts/README.md`.

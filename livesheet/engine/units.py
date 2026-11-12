@@ -66,22 +66,18 @@ UNITS: dict[str, sp.Expr] = {
     # length
     "m": m, "km": _k * m, "cm": _c * m, "mm": _ml * m, "um": _mu * m, "μm": _mu * m,
     "nm": sp.Rational(1, 10**9) * m,
-    "inch": sp.Rational(254, 10000) * m, "ft": sp.Rational(3048, 10000) * m,
-    "yd": sp.Rational(9144, 10000) * m, "mi": sp.Rational(1609344, 1000) * m,
     # area / volume
     "ha": 10**4 * m**2, "L": _ml * m**3, "mL": _mu * m**3,
     # mass
     "kg": kg, "gm": _ml * kg, "mg": _mu * kg, "tonne": 1000 * kg,
-    "lb": sp.Rational(45359237, 10**8) * kg,
     # time
     "s": s, "ms": _ml * s, "min": 60 * s, "hr": 3600 * s, "day": 86400 * s,
     "week": 7 * 86400 * s, "yr": sp.Rational(36525, 100) * 86400 * s,
     # force
-    "N": N, "kN": _k * N, "MN": _M * N, "lbf": sp.Rational(45359237, 10**8) * sp.Rational(980665, 10**5) * N,
+    "N": N, "kN": _k * N, "MN": _M * N,
     # pressure
     "Pa": Pa, "kPa": _k * Pa, "MPa": _M * Pa, "GPa": _G * Pa, "bar": 10**5 * Pa,
     "mbar": 100 * Pa, "atm": 101325 * Pa,
-    "psi": sp.Rational(45359237, 10**8) * sp.Rational(980665, 10**5) * N / (sp.Rational(254, 10000) * m) ** 2,
     # energy / power
     "J": J, "kJ": _k * J, "MJ": _M * J, "GJ": _G * J, "Wh": 3600 * J, "kWh": 3600 * _k * J,
     "MWh": 3600 * _M * J, "cal": sp.Rational(4184, 1000) * J, "kcal": sp.Rational(4184, 1) * J,
@@ -91,6 +87,10 @@ UNITS: dict[str, sp.Expr] = {
     "ohm": ohm, "Ω": ohm, "kohm": _k * ohm, "kΩ": _k * ohm, "Mohm": _M * ohm, "MΩ": _M * ohm,
     "C": C, "F": F, "uF": _mu * F, "μF": _mu * F, "nF": sp.Rational(1, 10**9) * F,
     "Wb": Wb, "T": T, "H": H,
+    "mH": _ml * H, "uH": _mu * H, "μH": _mu * H, "nH": sp.Rational(1, 10**9) * H,
+    "pF": sp.Rational(1, 10**12) * F,
+    # apparent and reactive power: power dimension, shown under their own names (spec 034)
+    "VA": W, "var": W,
     # frequency
     "Hz": Hz, "kHz": _k * Hz, "MHz": _M * Hz, "GHz": _G * Hz,
     "rpm": 2 * sp.pi / (60 * s),

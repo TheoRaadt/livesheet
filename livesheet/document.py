@@ -39,6 +39,11 @@ class RegionData:
     component_name: str = ""
     component_kind: str = ""       # e.g. "value", "formula"
     config: dict[str, str] = field(default_factory=dict)
+    # Saved camera of a 3-D plot region (spec 031 phase B): all three or none; only written for
+    # plot regions whose text is a ``surface`` spec, so older sheets round-trip unchanged.
+    view_az: float | None = None
+    view_el: float | None = None
+    view_zoom: float | None = None
 
     def __post_init__(self):
         if self.kind not in ("math", "text", "plot", "component"):
@@ -59,12 +64,24 @@ class RegionData:
             self.component_name = ""
             self.component_kind = ""
             self.config = {}
+        if not self.has_view():
+            self.view_az = self.view_el = self.view_zoom = None
+
+    def has_view(self) -> bool:
+        """True when a complete saved 3-D view is present on a ``surface`` plot region."""
+        lines = [ln.strip() for ln in self.text.splitlines() if ln.strip()]
+        return (self.kind == "plot" and bool(lines) and lines[0] == "surface"
+                and None not in (self.view_az, self.view_el, self.view_zoom))
 
     def to_dict(self) -> dict:
         data = {"kind": self.kind, "x": self.x, "y": self.y, "text": self.text}
         if self.kind == "plot":
             data["w"] = float(self.w)
             data["h"] = float(self.h)
+        if self.has_view():
+            data["view_az"] = float(self.view_az)
+            data["view_el"] = float(self.view_el)
+            data["view_zoom"] = float(self.view_zoom)
         if self.kind == "component":
             data["component_name"] = self.component_name
             data["component_kind"] = self.component_kind
@@ -87,6 +104,14 @@ class WireData:
             "from_component": self.from_component, "from_port": self.from_port,
             "to_component": self.to_component, "to_port": self.to_port,
         }
+
+
+def _optional_float(raw: object) -> float | None:
+    """Lenient: a missing or malformed number is treated as absent."""
+    if isinstance(raw, bool) or not isinstance(raw, (int, float)):
+        return None
+    value = float(raw)
+    return value if value == value and abs(value) != float("inf") else None
 
 
 def _parse_page_breaks(raw: object) -> list[float]:
@@ -212,7 +237,8 @@ class SheetDocument:
                     str(raw["kind"]), float(raw["x"]), float(raw["y"]), str(raw["text"]),
                     None if w is None else float(w), None if h is None else float(h),
                     str(raw.get("component_name", "")), str(raw.get("component_kind", "")),
-                    config))
+                    config, _optional_float(raw.get("view_az")),
+                    _optional_float(raw.get("view_el")), _optional_float(raw.get("view_zoom"))))
             except (KeyError, TypeError, ValueError) as exc:
                 raise DocumentError(f"Invalid region in file: {exc}") from None
         # Wires are parsed leniently (spec 009 edge cases): a version-1/2 file simply has no

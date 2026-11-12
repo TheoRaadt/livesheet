@@ -2,18 +2,28 @@
 
 from __future__ import annotations
 
-from PySide6.QtCore import QPointF, QRectF, Qt
+from PySide6.QtCore import QPointF, QRectF, Qt, Signal
 from PySide6.QtGui import QColor, QFont, QPainter, QPen
 from PySide6.QtWidgets import QGraphicsProxyWidget, QPushButton, QStyleOptionGraphicsItem
 
 from ..document import DEFAULT_PLOT_SIZE
 from ..engine import RegionResult
 from .plotview import paint_message, paint_plot
-from .regions import COLOR_EDIT_BG, COLOR_ERROR, COLOR_FRAME, GRID, PAD, Region, snap
+from .surfaceview import paint_surface
+from .regions import COLOR_EDIT_BG, COLOR_ERROR, COLOR_FRAME, GRID, GRIP, PAD, Region, snap
+
+DEG_PER_PIXEL = 0.5          # rotate speed of a 3-D drag (spec 031 phase B)
+ZOOM_PER_NOTCH = 1.1
+ZOOM_RANGE = (0.25, 4.0)
+PREVIEW_CELLS = 40           # above this grid size a rotate drag draws wire lines only
+DEFAULT_VIEW = (40.0, 30.0, 1.0)
 
 MIN_SIZE = (200.0, 140.0)
 HANDLE = 12.0
 STARTER_TEXT = "plot\nover \nshow "
+SURFACE_STARTER_TEXT = "surface\nover \nacross \nshow "
+SURFACE_HINT_TEXT = ("Empty 3-D plot: double-click to edit. "
+                     "Add an 'over' line, an 'across' line and one 'show' line.")
 HINT_TEXT = "Empty plot: double-click to edit.\nAdd an 'over' line (range or vector) and one or more 'show' lines."
 
 SPEC_FONT = QFont()
@@ -32,15 +42,39 @@ def is_plot_spec(text: str) -> bool:
     return bool(lines) and lines[0] == "plot"
 
 
-def is_blank_spec(text: str) -> bool:
-    """A spec without content: just ``plot`` plus bare ``over`` / ``show`` keywords."""
+def is_surface_spec(text: str) -> bool:
+    """True when the first non-blank line is exactly ``surface`` (3-D plot, spec 031)."""
     lines = spec_lines(text)
-    return bool(lines) and lines[0] == "plot" and all(ln in ("over", "show") for ln in lines[1:])
+    return bool(lines) and lines[0] == "surface"
+
+
+def view_line(text: str) -> str:
+    """The (trimmed) ``view`` line of a spec, '' when absent."""
+    for ln in spec_lines(text):
+        if ln == "view" or ln.startswith("view ") or ln.startswith("view\t"):
+            return ln
+    return ""
+
+
+def wrap_azimuth(az: float) -> float:
+    """Wrap an azimuth in degrees into [-180, 180)."""
+    return (az + 180.0) % 360.0 - 180.0
+
+
+def is_blank_spec(text: str) -> bool:
+    """A spec without content: just ``plot`` plus bare ``over`` / ``show`` keywords (for a
+    ``surface`` spec also ``across``)."""
+    lines = spec_lines(text)
+    if not lines:
+        return False
+    if lines[0] == "surface":
+        return all(ln in ("over", "across", "show") for ln in lines[1:])
+    return lines[0] == "plot" and all(ln in ("over", "show") for ln in lines[1:])
 
 
 def engine_source(text: str) -> str:
     """Text handed to the engine; anything that is not a plot spec can never define a name."""
-    return text if is_plot_spec(text) else "plot\n" + text
+    return text if is_plot_spec(text) or is_surface_spec(text) else "plot\n" + text
 
 
 def clamp_size(w: float, h: float) -> tuple[float, float]:
@@ -50,6 +84,7 @@ def clamp_size(w: float, h: float) -> tuple[float, float]:
 
 class PlotRegion(Region):
     kind = "plot"
+    viewChanged = Signal()      # the saved 3-D camera changed (sheet becomes modified)
 
     def __init__(self, text: str = "", w: float | None = None, h: float | None = None):
         super().__init__()
@@ -58,6 +93,12 @@ class PlotRegion(Region):
         self.size_h = float(h) if h else DEFAULT_PLOT_SIZE[1]
         self.result: RegionResult | None = None
         self._resizing: tuple[QPointF, float, float] | None = None
+        # Saved 3-D camera (spec 031 phase B): None until the first rotate or zoom.
+        self.view_az: float | None = None
+        self.view_el: float | None = None
+        self.view_zoom: float | None = None
+        self.rotating = False            # a rotate drag is in progress (drag preview)
+        self._view_line_at_edit = ""
         # Whether this region currently has a previously-committed, saved spec to fall back to:
         # used by the dialog's Cancel to decide "discard the new region" vs "revert its text"
         # (spec 006). True from the start for a region created with real text (e.g. loaded from
@@ -110,11 +151,14 @@ class PlotRegion(Region):
     # -- editing display -----------------------------------------------------------
 
     def _enter_edit_display(self) -> None:
+        self._view_line_at_edit = view_line(self.source)
         self._set_editor_text()
         self.editor.setVisible(True)
         self._update_use_dialog_control()
 
     def _leave_edit_display(self) -> None:
+        if view_line(self.source) != self._view_line_at_edit:
+            self.reset_view()     # a changed ``view`` line replaces the saved camera
         self.editor.setVisible(False)
         self._use_dialog_proxy.setVisible(False)
 
@@ -123,6 +167,9 @@ class PlotRegion(Region):
         when the current text is representable by the dialog (spec 006)."""
         from .plotdialog import decompose_plot_text
 
+        if is_surface_spec(self.source):   # 3-D plots are text-only (spec 031)
+            self._use_dialog_proxy.setVisible(False)
+            return
         ok = decompose_plot_text(self.source) is not None
         self._use_dialog_btn.setEnabled(ok)
         self._use_dialog_btn.setToolTip(
@@ -150,8 +197,15 @@ class PlotRegion(Region):
     def handle_rect(self) -> QRectF:
         return QRectF(self.size_w - HANDLE, self.size_h - HANDLE, HANDLE, HANDLE)
 
+    def is_3d(self) -> bool:
+        return is_surface_spec(self.source)
+
     def boundingRect(self) -> QRectF:
         rect = self.chart_rect().adjusted(-1, -1, 1, 1)
+        if self.is_3d():
+            # Frame ring around the chart (padding + grip): the move grip of a 3-D plot, since a
+            # press inside the chart rotates instead (spec 031 B.0).
+            rect = self.chart_rect().adjusted(-(PAD + GRIP), -(PAD + GRIP), PAD + GRIP, PAD + GRIP)
         if self.editing:
             rect |= self.content_rect().adjusted(-PAD, -PAD, PAD, PAD)
             btn_rect = QRectF(self._use_dialog_proxy.pos(), self._use_dialog_btn.sizeHint())
@@ -179,18 +233,88 @@ class PlotRegion(Region):
 
     def _paint_content(self, painter: QPainter, rect: QRectF) -> None:
         res = self.result
-        if not is_plot_spec(self.source) and self.source.strip():
+        surface = is_surface_spec(self.source)
+        if not is_plot_spec(self.source) and not surface and self.source.strip():
             paint_message(painter, rect, "A plot spec must start with the line 'plot'.", COLOR_ERROR)
         elif is_blank_spec(self.source) or not self.source.strip():
-            paint_message(painter, rect, HINT_TEXT, "#7a7a7a")
+            paint_message(painter, rect, SURFACE_HINT_TEXT if surface else HINT_TEXT, "#7a7a7a")
         elif res is None:
             paint_message(painter, rect, "", COLOR_ERROR)
         elif res.status == "error":
             paint_message(painter, rect, res.error, COLOR_ERROR)
+        elif res.surface is not None:
+            sd = res.surface
+            az, el, zoom = self.effective_view(sd)
+            mode = sd.draw
+            if self.rotating and max(len(sd.xs), len(sd.ys)) > PREVIEW_CELLS:
+                mode = "wire"
+            paint_surface(painter, rect, sd, az, el, zoom, mode)
         elif res.plot is not None:
             paint_plot(painter, rect, res.plot)
         else:
             paint_message(painter, rect, "", COLOR_ERROR)
+
+    # -- 3-D camera (spec 031 phase B) ------------------------------------------------------
+
+    def has_stored_view(self) -> bool:
+        return None not in (self.view_az, self.view_el, self.view_zoom)
+
+    def set_stored_view(self, az: float, el: float, zoom: float) -> None:
+        self.view_az, self.view_el, self.view_zoom = float(az), float(el), float(zoom)
+
+    def effective_view(self, data=None) -> tuple[float, float, float]:
+        """(azimuth, elevation, zoom): the stored camera, else the ``view`` text line, else 40/30/1."""
+        if self.has_stored_view():
+            return self.view_az, self.view_el, self.view_zoom
+        if data is None and self.result is not None:
+            data = self.result.surface
+        if data is not None:
+            return data.view_az, data.view_el, 1.0
+        return DEFAULT_VIEW
+
+    def rotate_by(self, dx_px: float, dy_px: float) -> None:
+        """Turn the view by a pointer movement in screen pixels (right = +azimuth, up = +elevation)."""
+        az, el, zoom = self.effective_view()
+        az = wrap_azimuth(az + DEG_PER_PIXEL * dx_px)
+        el = max(-90.0, min(90.0, el - DEG_PER_PIXEL * dy_px))
+        self.set_stored_view(az, el, zoom)
+        self.update()
+        self.viewChanged.emit()
+
+    def zoom_by(self, delta: float) -> None:
+        """Multiply the zoom by 1.1 per 120 wheel units, clamped to [0.25, 4]."""
+        az, el, zoom = self.effective_view()
+        zoom = max(ZOOM_RANGE[0], min(ZOOM_RANGE[1], zoom * ZOOM_PER_NOTCH ** (delta / 120.0)))
+        self.set_stored_view(az, el, zoom)
+        self.update()
+        self.viewChanged.emit()
+
+    def reset_view(self) -> None:
+        """Drop the saved camera; the ``view`` line (or 40/30, zoom 1) applies again."""
+        had = self.has_stored_view()
+        self.view_az = self.view_el = self.view_zoom = None
+        if had:
+            self.update()
+            self.viewChanged.emit()
+
+    def rotates_at(self, local_pos: QPointF) -> bool:
+        """True where a press starts a rotate drag: inside the chart of a 3-D plot that is not
+        being edited, except on the resize handle."""
+        return (self.is_3d() and not self.editing and self.chart_rect().contains(local_pos)
+                and not self.handle_rect().contains(local_pos))
+
+    def update_cursor(self, local_pos: QPointF) -> None:
+        if self.rotates_at(local_pos):
+            self.unsetCursor()      # plain arrow: a drag here turns the picture
+        else:
+            super().update_cursor(local_pos)
+
+    def wheelEvent(self, event) -> None:
+        if self.rotates_at(event.pos()) and event.delta() != 0:
+            self.zoom_by(event.delta())
+            event.accept()
+            return
+        event.ignore()
 
     # -- opening the dialog or the raw editor ---------------------------------------------
 
@@ -236,4 +360,5 @@ class PlotRegion(Region):
         super().mouseReleaseEvent(event)
 
 
-__all__ = ["PlotRegion", "STARTER_TEXT", "MIN_SIZE", "GRID", "engine_source", "is_plot_spec", "clamp_size"]
+__all__ = ["PlotRegion", "STARTER_TEXT", "MIN_SIZE", "GRID", "engine_source", "is_plot_spec", "is_surface_spec",
+           "SURFACE_STARTER_TEXT", "clamp_size"]

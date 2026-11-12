@@ -25,7 +25,7 @@ from ..document import RegionData, SheetDocument, WireData
 from ..engine import Engine, dataio, wiring
 from ..engine.pagination import PAGE_HEIGHT, PAGE_WIDTH, order_key
 from .completion_popup import CompletionPopup
-from .plotregion import PlotRegion, engine_source
+from .plotregion import SURFACE_STARTER_TEXT, PlotRegion, engine_source
 from .regions import COLOR_ERROR, COLOR_FRAME, GRID, ComponentRegion, MathRegion, Region, TextRegion, snap
 
 MIN_HEIGHT = 1100
@@ -51,6 +51,15 @@ class _MoveSession:
     started: bool = False
     cancelled: bool = False
     last_delta: tuple = field(default=(0.0, 0.0))
+
+
+@dataclass
+class _RotateSession:
+    """State of one press-drag-release rotate gesture on a 3-D plot (spec 031 phase B)."""
+    region: PlotRegion
+    last: QPointF
+    dbl_pending: bool = False   # press was a double-click event: edit on release if not dragged
+    moved: bool = False
 
 
 class Crosshair(QGraphicsItem):
@@ -128,7 +137,7 @@ def heading_text(region: TextRegion) -> str | None:
     """Whitespace-collapsed plain text of the first paragraph when it is non-empty and entirely
     bold, else None (spec 027). Never raises on odd content."""
     try:
-        block = region.editor.document().firstBlock()
+        block = region.raw_document().firstBlock()   # raw source, not the typeset view (spec 032)
         if not block.isValid():
             return None
         parts: list[str] = []
@@ -205,6 +214,7 @@ class Worksheet(QGraphicsScene):
         self._wires: list[WireItem] = []     # component-to-component connections (spec 009)
         self._wire_drag: tuple[ComponentRegion, str] | None = None   # drag-to-connect source
         self._wire_drag_item: QGraphicsLineItem | None = None
+        self._rotate: _RotateSession | None = None   # active 3-D rotate drag (spec 031 phase B)
         self._move: _MoveSession | None = None   # active drag-to-move gesture (spec 023)
         self._pressing = False
         self._scrolling = False
@@ -396,6 +406,8 @@ class Worksheet(QGraphicsScene):
         region.contentChanged.connect(self._on_content_changed)
         region.editingFinished.connect(self._on_editing_finished)
         region.moved.connect(self._on_moved)
+        if isinstance(region, PlotRegion):
+            region.viewChanged.connect(self.set_modified)   # spec 031 phase B: saved 3-D camera
         self._update_rect()
         self.outlineDirty.emit()
         return region
@@ -406,6 +418,16 @@ class Worksheet(QGraphicsScene):
         current = self.editing_region()
         if current is not None:
             current.finish_editing()
+        if kind == "surface":
+            # 3-D plot (spec 031): a plot region with starter text; no dialog, hint is shown
+            region = self.add_region("plot", self.crosshair.pos(), SURFACE_STARTER_TEXT)
+            self.clearSelection()
+            if self.views():
+                self.views()[0].setFocus(Qt.FocusReason.OtherFocusReason)
+            self.crosshair.hide()
+            self.set_modified()
+            self.recalculate()
+            return region
         if kind == "plot":
             region = self.add_region(kind, self.crosshair.pos(), "")
             self.clearSelection()
@@ -760,8 +782,11 @@ class Worksheet(QGraphicsScene):
                 continue
             if r.is_empty():
                 continue
-            regs.append(RegionData(r.kind, r.pos().x(), r.pos().y(), r.text(),
-                                    *((r.size_w, r.size_h) if isinstance(r, PlotRegion) else (None, None))))
+            data = RegionData(r.kind, r.pos().x(), r.pos().y(), r.text(),
+                              *((r.size_w, r.size_h) if isinstance(r, PlotRegion) else (None, None)))
+            if isinstance(r, PlotRegion) and r.has_stored_view():
+                data.view_az, data.view_el, data.view_zoom = r.view_az, r.view_el, r.view_zoom
+            regs.append(data)
         wires = [WireData(w.source.component_name, w.source_port, w.dest.component_name, w.dest_port)
                  for w in self._wires]
         return SheetDocument(regions=regs, significant=self.engine.significant, wires=wires,
@@ -782,8 +807,10 @@ class Worksheet(QGraphicsScene):
                                                      rd.config, QPointF(rd.x, rd.y))
                 by_name[region.component_name] = region
             else:
-                self.add_region(rd.kind, QPointF(rd.x, rd.y), rd.text,
-                                (rd.w, rd.h) if rd.kind == "plot" else None)
+                region = self.add_region(rd.kind, QPointF(rd.x, rd.y), rd.text,
+                                         (rd.w, rd.h) if rd.kind == "plot" else None)
+                if isinstance(region, PlotRegion) and rd.has_view():
+                    region.set_stored_view(rd.view_az, rd.view_el, rd.view_zoom)
         for wd in doc.wires:
             src, dst = by_name.get(wd.from_component), by_name.get(wd.to_component)
             if src is None or dst is None:
@@ -911,6 +938,8 @@ class Worksheet(QGraphicsScene):
         # generic pick-from-a-list dialog that is the primary, always-available way to create a
         # wire without needing pixel-perfect port targeting.
         connect_action = menu.addAction("Connect…") if connect_target is not None else None
+        reset_view = (menu.addAction("Reset 3-D view")
+                      if isinstance(region, PlotRegion) and region.is_3d() else None)
         chosen = menu.exec(event.screenPos())
         if chosen is plot_here:
             self.insert_plot_at(pos)
@@ -918,6 +947,8 @@ class Worksheet(QGraphicsScene):
             self.insert_matrix_at(pos)
         elif edit_as_grid is not None and chosen is edit_as_grid:
             self._open_matrix_dialog(region)
+        elif reset_view is not None and chosen is reset_view:
+            region.reset_view()
         elif connect_action is not None and chosen is connect_action:
             self._open_connect_dialog(region, connect_target[0], connect_target[1])
         event.accept()
@@ -993,6 +1024,16 @@ class Worksheet(QGraphicsScene):
             self._begin_move(region, event, dbl)
             event.accept()
             return
+        if isinstance(region, PlotRegion) and region.rotates_at(local):
+            # 3-D plot (spec 031 B.0, exception to spec 023): a press inside the chart rotates;
+            # the region moves from its frame ring.
+            if not region.isSelected():
+                self.clearSelection()
+                region.setSelected(True)
+            self._rotate = _RotateSession(region, QPointF(event.scenePos()), dbl_pending=dbl)
+            region.rotating = True
+            event.accept()
+            return
         self._pressing = True   # a double-click-typed press must not reach on_double_click
         try:
             super().mousePressEvent(event)
@@ -1011,7 +1052,30 @@ class Worksheet(QGraphicsScene):
             press_scene=QPointF(event.scenePos()), press_screen=QPointF(event.screenPos()),
             modified_before=self._modified, dbl_pending=dbl)
 
+    def _view_scale(self) -> float:
+        """Screen pixels per scene unit of the first view (1 without a view)."""
+        return self.views()[0].transform().m11() if self.views() else 1.0
+
+    def _rotate_step(self, event) -> None:
+        r = self._rotate
+        pos = QPointF(event.scenePos())
+        d = (pos - r.last) * self._view_scale()
+        r.last = pos
+        if d.x() or d.y():
+            r.moved = True
+            r.region.rotate_by(d.x(), d.y())
+
+    def _finish_rotate(self, event) -> None:
+        r, self._rotate = self._rotate, None
+        r.region.rotating = False
+        r.region.update()
+        if not r.moved and r.dbl_pending and not r.region.editing and r.region.scene() is self:
+            r.region.on_double_click(event.scenePos())
+
     def _drop_move(self) -> None:
+        if self._rotate is not None:
+            self._rotate.region.rotating = False
+            self._rotate = None
         if self._move is not None:
             self._move = None
             self._set_drag_cursor(False)
@@ -1167,6 +1231,10 @@ class Worksheet(QGraphicsScene):
             self._update_wire_drag(event.scenePos())
             event.accept()
             return
+        if self._rotate is not None:
+            self._rotate_step(event)
+            event.accept()
+            return
         if self._move is not None:
             if not self._scrolling:
                 self._drag_step(event)
@@ -1177,6 +1245,10 @@ class Worksheet(QGraphicsScene):
     def mouseReleaseEvent(self, event) -> None:
         if self._wire_drag is not None:
             self._finish_wire_drag(event.scenePos())
+            event.accept()
+            return
+        if self._rotate is not None and event.button() == Qt.MouseButton.LeftButton:
+            self._finish_rotate(event)
             event.accept()
             return
         if self._move is not None and event.button() == Qt.MouseButton.LeftButton:

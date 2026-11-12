@@ -35,7 +35,7 @@ from .icons import glyph_icon
 from .toolbarstyle import ToolbarStyler
 from .paths import default_save_path, remembered_dir
 from .importdialog import ImportDataDialog
-from .regions import MathRegion
+from .regions import MathRegion, TextRegion
 from .sidepanel import TOKEN_SELECTION, SidePanel
 from .theme import MODE_DARK, MODE_LIGHT, MODE_SYSTEM, apply_theme
 from ..engine.pagination import PAGE_HEIGHT
@@ -87,8 +87,8 @@ partfrac, x, float, n, diff, x, integrate, x, series, x, n, substitute, x = 2</t
 </table>
 <p><b>Functions:</b> sin cos tan asin acos atan atan2 sinh cosh tanh exp ln log (base 10) sqrt root
 abs floor ceil mod Max Min factorial binomial re im conj arg diff integrate limit sum product solve.</p>
-<p><b>Units:</b> m km cm mm um inch ft mi · kg gm mg tonne lb · s ms min hr day yr ·
-N kN MN lbf · Pa kPa MPa GPa bar mbar atm psi · J kJ MJ Wh kWh MWh cal · W kW MW ·
+<p><b>Units:</b> m km cm mm um nm · kg gm mg tonne · s ms min hr day yr ·
+N kN MN · Pa kPa MPa GPa bar mbar atm · J kJ MJ Wh kWh MWh cal · W kW MW ·
 A mA V kV ohm Ω C F uF Wb T H · Hz kHz MHz rpm · K mol cd · L mL ha · rad deg ·
 g (standard gravity). Your own definitions override unit names.</p>
 <p><b>Keys:</b> Enter ends a math region · Esc stops editing · double-click edits ·
@@ -221,6 +221,7 @@ class MainWindow(QMainWindow):
         m.addAction(self._action("&Math Region", lambda: self.sheet.insert_region("math"), "Ctrl+M"))
         m.addAction(self._action("&Text Region", lambda: self.sheet.insert_region("text"), "Ctrl+T"))
         m.addAction(self._action("&Plot", lambda: self.sheet.insert_region("plot"), "Ctrl+Shift+P"))
+        m.addAction(self._action("&3-D plot", lambda: self.sheet.insert_region("surface")))
         m.addAction(self._action("&Matrix…",
                                   lambda: self.sheet.insert_matrix_at(self.sheet.crosshair.pos()),
                                   "Ctrl+Shift+M"))
@@ -228,6 +229,19 @@ class MainWindow(QMainWindow):
                                   lambda: self.sheet.insert_component_at(self.sheet.crosshair.pos()),
                                   "Ctrl+Shift+C"))
         m.addAction(self._action("&Data from file…", self.import_data))
+        self.action_formula_inline = self._action(
+            "&Formula (inline)", lambda: self.insert_formula(False), "Ctrl+Alt+4",
+            "Insert $...$ for inline LaTeX math in a text region")
+        self.action_formula_display = self._action(
+            "Formula (&display)", lambda: self.insert_formula(True), "Ctrl+Alt+Shift+4",
+            "Insert $$...$$ for display LaTeX math in a text region")
+        m.addAction(self.action_formula_inline)
+        m.addAction(self.action_formula_display)
+        m.aboutToShow.connect(self._update_formula_actions)
+        self.sheet.selectionChanged.connect(self._update_formula_actions)
+        self.sheet.focusItemChanged.connect(lambda *_: self._update_formula_actions())
+        self.sheet.evaluationFinished.connect(lambda *_: self._update_formula_actions())
+        self.sheet.changed.connect(lambda *_: self._update_formula_actions())   # editing started
         m.addAction(self._action("Page &Break", lambda: self.sheet.insert_page_break(), "Ctrl+Return"))
         m.addSeparator()
         for label, token in ((":=  Definition", ":= "), ("≡  Global definition", "≡ "),
@@ -243,6 +257,14 @@ class MainWindow(QMainWindow):
         view_menu.addAction(self._action("Zoom &In", lambda: self.view.set_zoom(self.view.zoom() * 1.1), SK.ZoomIn))
         view_menu.addAction(self._action("Zoom &Out", lambda: self.view.set_zoom(self.view.zoom() / 1.1), SK.ZoomOut))
         view_menu.addAction(self._action("&Actual Size", lambda: self.view.set_zoom(1.0), "Ctrl+0"))
+        view_menu.addSeparator()
+        self.action_typeset_latex = QAction("Typeset &LaTeX in text regions", self)
+        self.action_typeset_latex.setCheckable(True)
+        typeset_on = self.settings.value("typeset_latex", True, type=bool)
+        self.action_typeset_latex.setChecked(typeset_on)
+        self.sheet.typeset_latex = typeset_on
+        self.action_typeset_latex.toggled.connect(self.set_typeset_latex)
+        view_menu.addAction(self.action_typeset_latex)
 
         m = mb.addMenu("&Help")
         m.addAction(self._action("&Syntax && Keys", self.show_help, SK.HelpContents))
@@ -329,6 +351,41 @@ class MainWindow(QMainWindow):
             self._appearance_actions[mode] = act
 
     # -- commands ------------------------------------------------------------------
+
+    def set_typeset_latex(self, on: bool) -> None:
+        """View > Typeset LaTeX in text regions (spec 032): persisted, applied to every text
+        region that is not being edited. The saved text is not affected."""
+        self.settings.setValue("typeset_latex", bool(on))
+        self.sheet.typeset_latex = bool(on)
+        for region in self.sheet.regions():
+            if isinstance(region, TextRegion):
+                region.refresh_typesetting()
+
+    def _update_formula_actions(self) -> None:
+        """The Insert formula items are off while a math/plot region is being edited."""
+        editing = self.sheet.editing_region()
+        enabled = editing is None or isinstance(editing, TextRegion)
+        self.action_formula_inline.setEnabled(enabled)
+        self.action_formula_display.setEnabled(enabled)
+
+    def insert_formula(self, display: bool) -> None:
+        """Insert > Formula (inline/display): delimiters at the caret of the text region being
+        edited, else in the selected text region, else in a new text region at the crosshair."""
+        editing = self.sheet.editing_region()
+        if editing is not None and not isinstance(editing, TextRegion):
+            return
+        region = editing
+        if region is None:
+            chosen = [r for r in self.sheet.selectedItems() if isinstance(r, TextRegion)]
+            if len(chosen) == 1:
+                region = chosen[0]
+                self.view.setFocus(Qt.FocusReason.OtherFocusReason)   # see insert_region
+                region.start_editing()
+            else:
+                region = self.sheet.insert_region("text")
+        if isinstance(region, TextRegion):
+            region.insert_formula(display)
+            region.editor.setFocus(Qt.FocusReason.OtherFocusReason)
 
     def insert_token(self, token: str) -> None:
         region = self.sheet.editing_region()

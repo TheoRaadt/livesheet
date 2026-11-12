@@ -13,6 +13,7 @@ A math region holds exactly one statement::
     x^2 == 4 → solve, x   equations use ``==``
     t := 0 s to 10 s step 2 s   range definition (``step`` optional, also ``≡``/``::=``)
     table t, v*t in m           result table over one range variable
+    surface                     first line of a 3-D surface spec (spec 031), same line form as plot
     plot                        first line of a plot spec; then ``over``/``show``/... lines
 """
 
@@ -123,6 +124,9 @@ def parse_statement(source: str) -> Statement:
     plot = _parse_plot(source)
     if plot is not None:
         return plot
+    surface = _parse_plot(source, "surface")
+    if surface is not None:
+        return surface
 
     table = _parse_table(text)
     if table is not None:
@@ -196,21 +200,22 @@ def _parse_range(name: str, params: list[str], rhs: str, show: bool, is_global: 
     return Statement("range", name, expr=start, range_end=end, range_step=step, is_global=is_global)
 
 
-_PLOT_TEXT_KEYWORDS = ("title", "xlabel", "ylabel")
+_PLOT_TEXT_KEYWORDS = ("title", "xlabel", "ylabel", "zlabel")
 
 
-def _parse_plot(source: str) -> Statement | None:
-    """A text whose first non-blank line is exactly ``plot`` is a plot spec (one option per line)."""
+def _parse_plot(source: str, header: str = "plot") -> Statement | None:
+    """A text whose first non-blank line is exactly ``plot`` (or ``surface``, spec 031) is a
+    plot spec (one option per line)."""
     lines = [ln.replace("\u00a0", " ").strip() for ln in source.splitlines()]
     lines = [ln for ln in lines if ln]
-    if not lines or lines[0] != "plot":
+    if not lines or lines[0] != header:
         return None
     parsed: list[tuple[str, str]] = []
     for line in lines[1:]:
         word, _, rest = line.partition(" ")
         rest = rest.strip()
         parsed.append((word, rest if word in _PLOT_TEXT_KEYWORDS else normalize(rest).strip()))
-    return Statement("plot", plot_lines=parsed)
+    return Statement(header, plot_lines=parsed)
 
 
 def _parse_table(text: str) -> Statement | None:

@@ -402,7 +402,7 @@ def test_criterion9_unknown_unit_override_errors(tmp_path, engine):
     assert result.status == "error"
     assert result.error == (
         "Unknown length unit 'banana'; use one of LiveSheet's existing length units, "
-        "e.g. 'mm', 'm', 'inch'.")
+        "e.g. 'mm', 'm', 'km'.")
 
 
 # ===========================================================================
