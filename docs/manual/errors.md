@@ -15,7 +15,7 @@ dialog's buttons when no single field is clearly at fault. See [Plots](plots.md)
 | `At least one function is required` | Every Function(s) box was left blank. | Type at least one expression to plot. |
 | `points must be between 2 and 10000` | The Points field (sampling mode) isn't a whole number, or is outside 2-10000. | Type a whole number of sample points in that range, or leave it blank for the default (101). |
 | `lower limit must be below upper limit` | An axis's min box and max box are both filled with plain numbers in the same unit, and min isn't below max. | Swap or correct the two values. |
-| `<name> is not defined` (e.g. `Y is not defined`) | A Function(s) row or the Variable(s) field uses a name that isn't defined anywhere earlier on the sheet. | Define that name above the plot, or fix the typo. |
+| `<name> is not defined` (e.g. `Y is not defined`) | A Function(s) row or the Variable(s) field uses a name that isn't defined anywhere earlier on the sheet. If the name is defined further along, the message continues with the 'defined later' hint (see [Undefined names](#the-defined-later-hint)). | Define that name above the plot, or fix the typo. |
 | `Units do not match: traces have different units` | Two or more Function(s) rows produce values with different kinds of unit (e.g. one gives metres, another seconds). | Make every plotted expression resolve to the same kind of unit. |
 | `Units do not match: limit is <unit or "dimensionless">` | An axis limit (X/Y min or max) is in a unit that doesn't match the data actually being plotted on that axis. | Use a limit in the same kind of unit as that axis's data, or leave it blank. |
 | `Units do not match: sampling limits have different units` | In "Sample a new range" mode, the From and To values are in different kinds of unit. | Use the same kind of unit for From and To (or no unit on either). |
@@ -36,7 +36,7 @@ itself once the text is actually evaluated. See [Vectors and matrices](matrices.
 | `Every cell must have a value` | A cell in the grid was left blank when you clicked OK. | Fill in every cell, or remove the row/column you don't need. |
 | `A cell cannot contain ',' or ';'; use Add column/Add row instead` | A single cell's text has a top-level comma or semicolon (e.g. typing `1, 2` into one box). | Split the values into separate cells using Add column/Add row (a comma inside parentheses, like `f(a, b)`, is fine). |
 | `Name is required` | "Define as" was chosen but the Name box was left blank. | Type a name, or switch back to "No name (insert as a value)". |
-| `<name> is not defined` | A cell's expression uses a name that isn't defined anywhere earlier on the sheet (surfaces once the matrix is committed, with the numeric `=` display). | Define that name above the matrix, or fix the typo. |
+| `<name> is not defined` | A cell's expression uses a name that isn't defined anywhere earlier on the sheet (surfaces once the matrix is committed, with the numeric `=` display). If the name is defined further along, the message continues with the 'defined later' hint (see [above](#the-defined-later-hint)). | Define that name above the matrix, or fix the typo. |
 | `Units do not match` | The numeric `=` display unit you asked for doesn't match the matrix's own entries. | Use a matching display unit, or leave the display unit blank. |
 | `Nested matrices are not supported` | A cell contains its own bracket literal (e.g. `[1,2]` typed inside another cell). | Use a plain number or expression in that cell instead of a nested matrix. |
 
@@ -139,7 +139,7 @@ itself, once it's evaluated. See [Truss analysis](truss.md).
 | `"fx"/"fy" given twice on one load line` | The same `fx` or `fy` was written twice in one `load` line's comma-separated list. | Give each of `fx`/`fy` at most once per line. |
 | `No result region for truss model "<name>" below this region` | A `nodes`/`elements`/`area`/`modulus`/`support`/`load` line is tagged `in <name>`, but no `resolve` line for that tag appears below it. | Add a `resolve in <name>` line below every region of that tag. |
 | `Fix the errors in the regions of model "<name>" first` | Some other region of the same tag (above `resolve`) has its own error. | Fix that region's error first; `resolve` re-checks automatically once it's fixed. |
-| `<name> is not defined` (e.g. `x is not defined`; `x, y are not defined` for more than one) | A `nodes`/`elements`/`area`/`modulus`/`support`/`load` expression uses a name that isn't defined anywhere earlier on the sheet. | Define that name above the truss region, or fix the typo. |
+| `<name> is not defined` (e.g. `x is not defined`; `x, y are not defined` for more than one) | A `nodes`/`elements`/`area`/`modulus`/`support`/`load` expression uses a name that isn't defined anywhere earlier on the sheet. If the name is defined further along, the message continues with the 'defined later' hint (see [above](#the-defined-later-hint)). | Define that name above the truss region, or fix the typo. |
 
 ## CAD profile import (DXF)
 
@@ -168,11 +168,37 @@ own".
 
 | Message | Cause | Fix |
 |---|---|---|
-| `<name> is not defined` (e.g. `F is not defined`) | The expression has no digit and consists only of unit names you have not defined yourself (`F/A`, `F =`, `V*A =`, `sigma := F/A`). LiveSheet takes this to be a formula whose variables you forgot. The name shown is the first one. The message is also shown for a line that depends on such a line (for example `W is not defined`). | Define the name before the formula (`F := 10 N`), or, if you meant the unit, write a number before it (`5 F`). |
-| `<names> are not defined` (e.g. `Ac, P are not defined`; `Is, R are not defined`) | A formula, such as one inserted from a formula tab, uses several names that are not defined. The names are listed in alphabetical order. | Define each listed name above the formula, or rename it to one you defined. |
+| `<name> is not defined` (e.g. `F is not defined`) | The expression has no digit and consists only of unit names you have not defined yourself (`F/A`, `F =`, `V*A =`, `sigma := F/A`). LiveSheet takes this to be a formula whose variables you forgot. The name shown is the first one. The message is also shown for a line that depends on such a line (for example `W is not defined`). If the name is defined further along, the message continues with the 'defined later' hint (see below). | Define the name before the formula (`F := 10 N`), or, if you meant the unit, write a number before it (`5 F`). |
+| `<names> are not defined` (e.g. `Ac, P are not defined`; `Is, R are not defined`) | A formula, such as one inserted from a formula tab, uses several names that are not defined. The names are listed in alphabetical order. If a name is defined further along, the message continues with the 'defined later' hint (see above). | Define each listed name above the formula, or rename it to one you defined. |
 | `<name> is not defined` for a unit alias (e.g. `u := m/s` gives `m is not defined`, then `u is not defined` wherever `u` is used) | A definition whose right side is only unit names. The alias idiom is no longer accepted. | Include a number: `u := 1 m/s`. |
 | `<name> is not defined` for a bare conversion (e.g. `m = mm`) | A conversion written with no quantity in front. | Write a quantity: `1 m = mm` (gives `= 1000 mm`). |
 | `g is not defined` / unexpected result with `g` | `g` is standard gravity, not grams. A bare `g =` or `x := g` is rejected, and `28.97 g/mol` is a gravity-per-mole, not a molar mass. | Use `gm` for grams (`28.97 gm/mol`). |
+
+### The 'defined later' hint
+
+If a name is reported as not defined but the sheet does define it further along in the calculation
+order, the message gets one more sentence:
+
+`<name> is not defined. A definition must come before its use (left to right, then top to bottom); defined later: <name>.`
+
+With several undefined names, the sentence lists only the ones that are defined later, in
+alphabetical order, for example `q, x are not defined. A definition must come before its use (left to
+right, then top to bottom); defined later: x.` The first part of the message is unchanged.
+
+Example: you write `y := 2*x =` and, to its right or lower on the page, `x := 4`. The first region
+shows the message above with `x`. Fix it by moving `x := 4` to the left of, or above, the line that
+uses it. Or make it a global definition, `x ≡ 4`, which is visible everywhere on the sheet and needs
+no particular position.
+
+The hint is not added when:
+
+- the name is defined nowhere on the sheet (a typo), or only in the same region (`x := x + 1`);
+- the name is defined only earlier in the order (then the order is fine and the earlier line
+  carries the real error);
+- the name is a global definition, a unit, a built-in, or a variable from imported data.
+
+See [Moving regions](moving-regions.md) and [Pages and page breaks](pages.md) for how the order is
+decided.
 
 Not caught, by design: `m^2` on its own, `P/A` when only `P` is defined, expressions containing a
 digit (`F^2/A`), and unit names inside function calls. These give a number built from the unit
@@ -196,7 +222,7 @@ example `mean`, `normal_pdf`). See [Statistics](statistics.md).
 | `<f>() is undefined when a vector is constant` (e.g. `correlation() is undefined when a vector is constant`; also `covariance`) | All entries of one of the two lists are equal. | Use data that varies. |
 | `Vectors must have the same length (<m> and <n>)` (e.g. `(2 and 3)`) | The two lists given to `covariance`, `correlation`, `fit_linear`, `fit_poly` or `r_squared` (its `x` and `y`) differ in length. | Make both lists the same length. |
 | `Units do not match` | A list has entries with different kinds of unit, or a display unit you asked for doesn't fit the result. | Use one kind of unit throughout, or a matching display unit. |
-| `<name> is not defined` | A list entry or argument uses a name not defined earlier on the sheet. | Define it above, or fix the typo. |
+| `<name> is not defined` | A list entry or argument uses a name not defined earlier on the sheet. If the name is defined further along, the message continues with the 'defined later' hint (see [above](#the-defined-later-hint)). | Define it above, or fix the typo. |
 | `<f>() does not accept a unit in this version` (e.g. `normal_pdf() does not accept a unit in this version`) | A distribution or sampling function, or the `p` of `quantile`, was given a value with a unit. | Pass plain numbers; remove the unit (see the notes in [Statistics](statistics.md)). |
 | `sigma must be positive` | The `sigma` of a normal function is zero or negative. | Use a positive spread. |
 | `a must be less than b` | A uniform function was given bounds with `a` not below `b`. | Put the lower bound first and make it smaller. |
@@ -249,7 +275,7 @@ the line that is wrong, as soon as you type it; the rest appear on the `verdict`
 | `Result too large` | The numbers are so large that the test cannot be computed. | Use smaller values or a different unit. |
 | `verdict takes no expression` | Text was written between `verdict` and `in <name>`. | Write `verdict in <name>` and nothing else. |
 | `No result region for hypothesis test "<name>" below this region` | A `sample`/`expected`/`claim`/`level` line is tagged `in <name>`, but no `verdict` line for that tag is below it. | Add a `verdict in <name>` line below every line of that test. |
-| `<name> is not defined` | A `sample`, `expected`, `claim` value or `level` uses a name not defined earlier on the sheet. | Define it above, or fix the typo. |
+| `<name> is not defined` | A `sample`, `expected`, `claim` value or `level` uses a name not defined earlier on the sheet. If the name is defined further along, the message continues with the 'defined later' hint (see [above](#the-defined-later-hint)). | Define it above, or fix the typo. |
 
 ## Optimization (solve models)
 
@@ -263,7 +289,7 @@ See [Optimization](optimization.md). `<...>` stands for text from your sheet.
 | `Starting guess for "<x>" must be a real number` | The guess is not a real number. | Give a real number, with a unit if needed. |
 | `Starting guess for "<x>" must be finite` | The guess is infinite or undefined. | Use an ordinary number. |
 | `No unknowns declared for model "<m>"` | A result line has no `vary` line with the same name. | Add `vary ... in <m>`, and check the names match. |
-| `<name> is not defined` | An equation or limit uses a name not defined above. | Define it above or fix the typo. |
+| `<name> is not defined` | An equation or limit uses a name not defined above. If the name is defined further along, the message continues with the 'defined later' hint (see [above](#the-defined-later-hint)). | Define it above or fix the typo. |
 | `Cannot evaluate at the starting guess: ...` | The equations cannot be calculated at your guess (for example a division by zero), or the result is not finite. | Try a different starting guess. |
 | `Constraint "<line>" does not involve any unknown` | An equation or limit mentions none of the declared unknowns. | Include an unknown, or remove the line. |
 | `Objective "<expr>" does not involve any unknown` | The `least`/`most` expression mentions no unknown. | Use an expression with an unknown. |
@@ -290,8 +316,8 @@ units`). It tells you how much content was pushed down.
 ## Moving regions
 
 Moving regions adds no messages of its own. After a drag or nudge, a region that now sits before
-the definition it needs shows `<name> is not defined` (see
-[Undefined names and bare units](#undefined-names-and-bare-units)). Move the definition or the
+the definition it needs shows `<name> is not defined`, followed by the 'defined later' hint (see
+[The 'defined later' hint](#the-defined-later-hint)). Move the definition or the
 region back, or place the definition further left or higher up in the same column. See
 [Moving regions](moving-regions.md).
 
@@ -310,7 +336,7 @@ The Calculus and root buttons only insert text, so they add no messages of their
 | Message | Cause | Fix |
 |---|---|---|
 | `Invalid limits given: (x, 0, 3)` (the bracket shows your bounds) | The bounds were written flat, as `integrate(x^2, x, 0, 3)`, or the bounds bracket has too many parts. | Write the bounds in one bracket with the variable: `integrate(x^2, (x, 0, 3))`. |
-| `<name> is not defined` (e.g. `b is not defined`) | A bound or the integrand uses a name that has no definition, for example a template whose `a`, `b` or `f` you did not replace, evaluated with `=`. | Replace the stand-in or define the name above. With `→` an undefined bound is kept as a symbol instead. |
+| `<name> is not defined` (e.g. `b is not defined`) | A bound or the integrand uses a name that has no definition, for example a template whose `a`, `b` or `f` you did not replace, evaluated with `=`. If the name is defined further along, the message continues with the 'defined later' hint (see [above](#the-defined-later-hint)). | Replace the stand-in or define the name above. With `→` an undefined bound is kept as a symbol instead. |
 | An error about a number where a variable is expected (SymPy wording) | The integration variable has a definition on your sheet (for example `x := 5`), so `integrate(x^2, x)` integrates over a number. | Use an integration variable that you have not defined. |
 
 ## Autocomplete

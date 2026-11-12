@@ -255,6 +255,7 @@ class Engine:
                                                results, ode_models, truss_models, stats_models)
                 continue
             results[key] = self._run(st, env)
+        _add_order_hints(regions, statements, results, self._dataset_names)
         return results
 
     def _run_model(self, st: Statement, pos: int, key, env: dict, earlier: dict, last_result: dict,
@@ -711,6 +712,37 @@ def _failed_function(exc: Exception):
     def failed(*_args, **_kwargs):
         raise exc
     return failed
+
+
+_UNDEFINED_RE = re.compile(r"^([^\W\d]\w*(?:, [^\W\d]\w*)*) (?:is|are) not defined$")
+ORDER_HINT = ("A definition must come before its use (left to right, then top to bottom); "
+              "defined later: ")
+
+
+def order_hint(message: str, first_def: dict[str, int], pos: int, skip=frozenset()) -> str:
+    """``message`` plus the evaluation-order hint when it is an exact "not defined" text and a
+    listed name is first defined (non-globally) by a region after position ``pos`` (spec 030 B)."""
+    m = _UNDEFINED_RE.match(message)
+    if not m:
+        return message
+    later = sorted(n for n in m.group(1).split(", ")
+                   if n not in skip and first_def.get(n, -1) > pos)
+    return f"{message}. {ORDER_HINT}{', '.join(later)}." if later else message
+
+
+def _add_order_hints(regions: list, statements: dict, results: dict, skip) -> None:
+    first_def: dict[str, int] = {}
+    for pos, (key, _) in enumerate(regions):
+        st = statements.get(key)
+        if (st is not None and not _is_global(st) and st.name
+                and st.kind in ("define", "range")):
+            first_def.setdefault(st.name, pos)
+    if not first_def:
+        return
+    for pos, (key, _) in enumerate(regions):
+        res = results.get(key)
+        if res is not None and res.status == "error":
+            res.error = order_hint(res.error, first_def, pos, skip)
 
 
 def _is_global(st: Statement) -> bool:

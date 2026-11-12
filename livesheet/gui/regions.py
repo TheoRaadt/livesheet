@@ -384,7 +384,8 @@ class MathRegion(Region):
         if word[0] == self._popup_dismissed:
             self.close_popup()
             return
-        result = completion.complete(text, caret, self._other_sources())
+        result = completion.complete(text, caret, self._other_sources(),
+                                         getattr(scene, "datasets", ()))
         if result is None:
             self.close_popup()
             return

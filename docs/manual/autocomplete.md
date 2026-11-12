@@ -11,9 +11,10 @@ The list appears just under the line you are typing, at the start of the word. E
 - the name, for example `mean`;
 - a short grey hint showing how to call it, for example `mean(v)` or `predict(coeffs, x)`;
 - for some rows, a small tag in square brackets: `[const]` for constants such as `pi`, `[var]` for
-  a variable you defined elsewhere on the sheet, and `[user]` for a function you defined yourself.
+  a variable you defined elsewhere on the sheet, `[user]` for a function you defined yourself, and
+  `[data]` for a name that comes from imported data.
 
-It offers three kinds of names:
+It offers four kinds of names:
 
 - **Built-in functions**, for example `sin`, `sqrt`, `diff`, `integrate`, `mean`, `fit_linear`.
 - **Constants**, for example `pi` and `e`.
@@ -22,6 +23,19 @@ It offers three kinds of names:
   defined with parameters shows them in its hint, for example `area(w, h)`. A line that only
   evaluates something (such as `total =`) does not define a name, so it is not offered.
 
+- **Imported data**: the variables of every data set on the sheet (see
+  [Importing data](data-import.md)). Each number column is offered as `<set>_<column>`, for example
+  `run1_F`, with a grey hint giving how many values it holds and its unit, such as `4 values, N`
+  (just `4 values` when the column has no unit). If the data set can be used as one combined table,
+  its own name is offered too, with a hint such as `4 x 2 matrix`. Text columns are never offered,
+  and a data set whose number columns have different units offers no bare name. Choosing one inserts
+  just the name, without a bracket.
+
+  The list always reflects the data sets on the sheet right now. After you remove or rename a data
+  set, or refresh it from a file that no longer has a column, the old names are no longer offered
+  from your next keystroke. Formulas you already wrote are not changed. A saved sheet offers the
+  same names when you reopen it, even if the original file is no longer there.
+
 If you define a name that is also a built-in name, only your own is listed.
 
 It does **not** offer unit names (`m`, `kg`, `MPa` ...), the solve-model keywords (`vary`,
@@ -29,9 +43,13 @@ It does **not** offer unit names (`m`, `kg`, `MPa` ...), the solve-model keyword
 `Gamma`, because it is also a built-in function.
 
 Matching ignores capital letters. When several names match, names that match your capitals exactly
-come first, then your own names, then shorter names, then alphabetical order. For example, typing
-`me` lists `mean` first and `median` next. The list shows 8 rows at a time and scrolls if there are
-more.
+come first. After that the names are in three groups: the names you defined on the sheet, then
+imported-data names, then built-in names. Inside each group, shorter names come first, then
+alphabetical order (capital letters sort before small ones). For example, typing `me` lists `mean`
+first and `median` next. After importing `run1` with columns `t` (seconds) and `F` (newtons), typing
+`ru` lists `run1_F` and then `run1_t`. If the data set also has a combined table, `run1` comes
+first. If a variable of yours and a data column both match, your variable is listed first. The list
+shows 8 rows at a time and scrolls if there are more.
 
 ## When it opens
 

@@ -10,7 +10,7 @@ import inspect
 from dataclasses import dataclass, field
 from typing import Iterable
 
-from . import evaluator
+from . import dataio, evaluator
 from .syntax import parse_statement
 
 MIN_PREFIX = 2
@@ -39,7 +39,7 @@ SIGNATURE_OVERRIDES: dict[str, str] = {
 @dataclass(frozen=True)
 class Candidate:
     name: str
-    kind: str            # function | constant | user_function | variable
+    kind: str            # function | constant | user_function | variable | data
     signature: str = ""
 
 
@@ -115,6 +115,20 @@ def user_candidates(sources: Iterable[str]) -> list[Candidate]:
     return list(seen.values())
 
 
+def dataset_candidates(datasets: Iterable[dataio.Dataset]) -> list[Candidate]:
+    """Name candidates for imported datasets (spec 030 A). Metadata only, no matrices built."""
+    out: list[Candidate] = []
+    for ds in datasets:
+        numbers = [c for c in ds.columns if c.kind == "number"]
+        for col in numbers:
+            hint = f"{len(col.values)} values" + (f", {col.unit}" if col.unit else "")
+            out.append(Candidate(dataio.column_variable_name(ds, col), "data", hint))
+        if dataio.combined_matrix_available(ds):
+            rows = len(numbers[0].values)
+            out.append(Candidate(ds.name, "data", f"{rows} x {len(numbers)} matrix"))
+    return out
+
+
 def _is_ident(ch: str) -> bool:
     return ch.isalnum() or ch == "_"
 
@@ -145,24 +159,29 @@ def word_at(text: str, caret: int) -> tuple[int, str] | None:
 
 
 def complete(text: str, caret: int | None = None,
-             user_sources: Iterable[str] = ()) -> Completion | None:
+             user_sources: Iterable[str] = (),
+             datasets: Iterable[dataio.Dataset] = ()) -> Completion | None:
     if caret is None:
         caret = len(text)
     word = word_at(text, caret)
     if word is None:
         return None
     start, prefix = word
-    users = user_candidates(user_sources)
+    data: dict[str, Candidate] = {}
+    for c in dataset_candidates(datasets):
+        data.setdefault(c.name, c)
+    users = [c for c in user_candidates(user_sources) if c.name not in data]
     taken = {c.name for c in users}
-    pool = users + [c for c in builtin_candidates() if c.name not in taken]
+    pool = users + list(data.values()) + [
+        c for c in builtin_candidates() if c.name not in taken and c.name not in data]
     low = prefix.lower()
     hits = [c for c in pool if c.name.lower().startswith(low)]
     if not hits or all(c.name == prefix for c in hits):
         return None
-    user_names = taken
 
     def rank(c: Candidate):
-        return (not c.name.startswith(prefix), c.name not in user_names, len(c.name), c.name)
+        group = 0 if c.name in taken else 1 if c.name in data else 2
+        return (not c.name.startswith(prefix), group, len(c.name), c.name)
 
     hits.sort(key=rank)
     return Completion(start, prefix, hits)

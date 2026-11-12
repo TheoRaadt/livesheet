@@ -19,7 +19,8 @@ ROW_H = 18.0
 MAX_W = 360.0
 MIN_W = 120.0
 PAD_X = 6.0
-KIND_TAGS = {"constant": "const", "variable": "var", "user_function": "user"}
+KIND_TAGS = {"constant": "const", "variable": "var", "user_function": "user",
+            "data": "data"}
 
 POPUP_FONT = QFont()
 POPUP_FONT.setPointSize(11)

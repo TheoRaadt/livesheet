@@ -48,7 +48,7 @@ It grows as features ship; a page only appears here once a feature is finished a
   while editing, moving a group), grid snapping, Esc to cancel, arrow-key and Shift+arrow nudging,
   and how a move changes the calculation order.
 - [Autocomplete](autocomplete.md) - the name list that opens after two typed letters in a math
-  region (built-in functions, constants and your own names, with call hints), Down/Up to move, Tab
+  region (built-in functions, constants, your own names and imported-data names, with call hints), Down/Up to move, Tab
   to accept, Esc to dismiss, and how it interacts with the Greek-letter buttons.
 - [Importing data](data-import.md) - Insert > Data from file...: bringing a CSV file into the sheet
   as a dataset (delimiter, decimal mark, header, units like `name [unit]`), using its columns such

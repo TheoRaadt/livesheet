@@ -8,7 +8,7 @@ Last full suite: 3326 passed, 2 skipped, 10 xfailed (`QT_QPA_PLATFORM=offscreen 
   spec 026 Statistics + Optimization tab buttons, spec 027 Outline tab, spec 024 function autocomplete
   (Tab fix + shared QSettings test isolation), spec 028 data import core (D1 engine + .lsheet v5, D2 import dialog
   + Data tab), spec 029 closed calculus templates + definite-integral button (selection after insert, one undo step),
-  backlog 63 (arity error in function bodies). All tester-reviewed, defects fixed, manual updated (docs/manual: moving-regions, autocomplete,
+  backlog 63 (arity error in function bodies), spec 030 (dataset names in autocomplete = backlog 67, evaluation-order hint). All tester-reviewed, defects fixed, manual updated (docs/manual: moving-regions, autocomplete,
   optimization, data-import, statistics, main-window, errors).
 - Real-window checks on Theo's Mac have NOT been done for any of these (testers had no computer use).
 
@@ -19,10 +19,10 @@ Last full suite: 3326 passed, 2 skipped, 10 xfailed (`QT_QPA_PLATFORM=offscreen 
    wrapping tab strip, page breaks, PDF export, formula tabs.
 2. **Crash report from Theo**: app closes when switching a tab via PyCharm's Run button (backlog 44); need the Run-window
    text and the tab. May be gone since spec 022.
-3. Backlog: 66 "Reading..." state for CSV files over 2 MB,
-   67 dataset variables in autocomplete, integration variable clashes with a sheet variable of the same name (`x := 5`
+3. Backlog: 68 3D plots (queued by Theo, next), 66 "Reading..." state for CSV files over 2 MB,
+   integration variable clashes with a sheet variable of the same name (`x := 5`
    breaks `integrate(x^2, x)`; engine item). Done this session: 62, 63, 64, 65.
-4. Evaluation-order error hint ("x, y are not defined" could mention definitions must come earlier), in-app help text
+4. In-app help text
    lacks Shift+arrow nudging, undo (none exists; drag-move and dataset edits shipped without it), `length` function missing.
 5. Standing backlog: M6 data components (JSON/Excel import, component formulas seeing datasets, backlog 32), spec 016
    (3D plots, research only), beam FEM F2, document quality (headers/footers, sections), CAS depth, heading levels /

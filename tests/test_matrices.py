@@ -343,7 +343,7 @@ def test_size_too_large():
 
 def test_order_top_to_bottom():
     res = run("v[1] =", "v := [1; 2]")
-    assert res[0].status == "error" and res[0].error == "v is not defined"
+    assert res[0].status == "error" and res[0].error.startswith("v is not defined")
 
 
 def test_shadowing_functions_and_names():
