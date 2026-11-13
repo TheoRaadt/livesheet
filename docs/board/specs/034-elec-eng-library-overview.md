@@ -268,3 +268,9 @@ All 19 functions in `livesheet/engine/electrical.py`; every numeric criterion 19
 5. Zero handling (not in spec): a time of `0 s` loses its unit in the engine, so `t` (nonneg) and impedance vector entries / `z` arguments accept a bare 0. `rc_charge_voltage(12 V, 0 s, ...) =` gives 0 (and `= V` fails, same defect as 034-1A-1). `impedance_parallel` with a zero entry gives "z must not contain a zero impedance"; `phasor_angle` of zero gives "z must not be zero".
 6. Wording: a dimension error for inductance reads "L must be a inductance, not V" (shared template "must be a <dimension>"); cosmetic, same pattern as 1A.
 7. `phasor(mag, phi)` accepts any unit (or none) for `mag` and keeps it; `phasor_magnitude(z)` keeps the unit of z (accepts kV, displays `= kV`). Argument names in hints and errors follow the spec table (f, L, C, Vs, t); GUI placeholder names (f_hz, Lind, Ccap) are a GUI-1 concern.
+
+## GUI-1 implementation annotations (developer, 2026-11-13)
+Implemented in `livesheet/gui/sidepanel.py` (`_ELEC_FUNC_TOKENS`, 36 tuples; `TAB_CATEGORIES["Electrical"]` extended). Meaning unchanged; notes:
+1. GUI-4 gives tooltips for only some buttons ("... | rad" etc.); the rest were written by the developer in the same style (inputs and result units, SI only). Spec 020 tests (`test_formula_tabs_018_020.py`, `test_formula_tabs_review_022.py`) asserted the Electrical tab had exactly two headers/11 buttons; they were adapted so the original two groups stay a prefix (GUI-6 regression kept).
+2. Spec says the buttons "map to one per phase 1 function": the 36 tokens cover exactly the 36 `ELEC_BUILTINS` names; each token's argument count matches the function signature (tested).
+3. Labels are descriptive text, not equal to the token (unlike spec 020's DC buttons whose label equals the text); the spec's GUI-4 defines it so.

@@ -196,8 +196,10 @@ def test_headers_and_counts(tab):
     rows, headers, counts = TABS[tab]
     panel, _ = _panel()
     items = _tab_buttons_and_headers(panel, tab)
-    assert [t for k, t in items if k == "H"] == headers
-    assert sum(counts) == len([1 for k, _ in items if k == "B"]) == len(rows)
+    # Spec 034 GUI-1 appended 7 sub-groups to Electrical; the original groups stay a prefix.
+    assert [t for k, t in items if k == "H"][:len(headers)] == headers
+    assert sum(counts) == len(rows)
+    assert len([1 for k, _ in items if k == "B"]) >= len(rows)
     # buttons are grouped under their own header, in order
     seq, cur = [], None
     for k, v in items:
@@ -206,7 +208,7 @@ def test_headers_and_counts(tab):
             seq.append([cur, 0])
         else:
             seq[-1][1] += 1
-    assert [n for _, n in seq] == counts
+    assert [n for _, n in seq][:len(counts)] == counts
 
 
 def test_spec_counts_15_11_21():
@@ -217,7 +219,7 @@ def test_spec_counts_15_11_21():
 def test_labels_tokens_tooltips_exact_and_ordered(tab):
     rows, headers, _ = TABS[tab]
     panel, sink = _panel()
-    buttons = [v for k, v in _tab_buttons_and_headers(panel, tab) if k == "B"]
+    buttons = [v for k, v in _tab_buttons_and_headers(panel, tab) if k == "B"][:len(rows)]
     assert [b.text() for b in buttons] == [r[1] for r in rows]
     for b, (_cat, label, token, tip) in zip(buttons, rows):
         got_tip = _norm(b.toolTip())

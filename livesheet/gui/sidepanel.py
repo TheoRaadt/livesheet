@@ -274,7 +274,88 @@ _OPT_TOKENS: list[tuple[str, str, str, str]] = [
      "the problem; only a local optimum is found."),
 ]
 
-MATH_TOKENS.extend(_MECH_TOKENS + _ELEC_TOKENS + _CHEM_TOKENS + _STAT_TOKENS + _OPT_TOKENS)
+_AC, _3PH, _XFMR, _RNET, _PHAS, _TRANS_RES, _FILT = (
+    "AC Power", "Three-Phase", "Transformers", "Resistor Networks", "Phasors & Impedance",
+    "Transients & Resonance", "Filters")
+
+# Spec 034 GUI-1: one button per electrical library function (placeholders avoid bare unit letters).
+_ELEC_FUNC_TOKENS: list[tuple[str, str, str, str]] = [
+    (_AC, "rms from peak", "rms_from_peak(Vpk)", "RMS voltage from peak voltage. Vpk in V; result in V."),
+    (_AC, "peak from RMS", "peak_from_rms(Vrms)", "Peak voltage from RMS voltage. Vrms in V; result in V."),
+    (_AC, "average power", "average_power(Vrms, Irms, phi)",
+     "Average power P = Vrms Irms cos(phi). Vrms in V, Irms in A, phi in rad; result in W."),
+    (_AC, "apparent power", "apparent_power(Vrms, Irms)",
+     "Apparent power S = Vrms Irms. Vrms in V, Irms in A; result in VA."),
+    (_AC, "reactive power", "reactive_power(Vrms, Irms, phi)",
+     "Reactive power Q = Vrms Irms sin(phi), positive for a lagging (inductive) load. Vrms in V, "
+     "Irms in A, phi in rad; result in var."),
+    (_AC, "power factor", "power_factor(phi)", "Power factor cos(phi). phi in rad; result dimensionless."),
+    (_3PH, "wye line voltage", "wye_line_voltage(Vph)",
+     "Line voltage V_L = sqrt(3) V_ph of a balanced wye supply. Vph in V; result in V."),
+    (_3PH, "wye phase voltage", "wye_phase_voltage(Vline)",
+     "Phase voltage V_L / sqrt(3) of a balanced wye supply. Vline in V; result in V."),
+    (_3PH, "delta line current", "delta_line_current(Iph)",
+     "Line current sqrt(3) I_ph of a balanced delta load. Iph in A; result in A."),
+    (_3PH, "three-phase power", "three_phase_power(VL, IL, phi)",
+     "Balanced three-phase power sqrt(3) V_L I_L cos(phi). VL in V, IL in A, phi in rad; result in W."),
+    (_XFMR, "secondary voltage", "transformer_secondary_voltage(Vp, Np, Ns)",
+     "Ideal transformer secondary voltage Vp Ns/Np. Vp in V; Np, Ns plain turn counts; result in V."),
+    (_XFMR, "secondary current", "transformer_secondary_current(Ip, Np, Ns)",
+     "Ideal transformer secondary current Ip Np/Ns. Ip in A; Np, Ns plain turn counts; result in A."),
+    (_XFMR, "reflected impedance", "reflected_impedance(Zs, Np, Ns)",
+     "Secondary impedance seen from the primary, Zs (Np/Ns)^2. Zs in ohm; Np, Ns plain turn counts; "
+     "result in ohm."),
+    (_RNET, "series resistance", "resistors_series(R)",
+     "Total of resistors in series. R is a vector of resistances in ohm; result in ohm."),
+    (_RNET, "parallel resistance", "resistors_parallel(R)",
+     "Total of resistors in parallel. R is a vector of resistances in ohm; result in ohm."),
+    (_RNET, "voltage divider", "voltage_divider(Vin, R1, R2)",
+     "Output voltage across R2: Vin R2/(R1 + R2). Vin in V; R1, R2 in ohm; result in V."),
+    (_RNET, "current divider", "current_divider(Itot, R1, R2)",
+     "Current through R1: Itot R2/(R1 + R2). Itot in A; R1, R2 in ohm; result in A."),
+    (_PHAS, "phasor", "phasor(mag, phi)",
+     "Complex phasor mag e^(j phi). mag in V or A; phi in rad; result has the unit of mag."),
+    (_PHAS, "phasor magnitude", "phasor_magnitude(z)",
+     "Magnitude of a complex phasor. z in V, A or ohm; result has the unit of z."),
+    (_PHAS, "phasor angle", "phasor_angle(z)",
+     "Angle of a complex phasor, in (-pi, pi]. z in V, A or ohm; result in rad."),
+    (_PHAS, "resistor impedance", "impedance_resistor(R)",
+     "Impedance of a resistor. R in ohm; result in ohm."),
+    (_PHAS, "inductor impedance", "impedance_inductor(f_hz, Lind)",
+     "Impedance j 2 pi f L of an inductor. f_hz in Hz, Lind in H; result in ohm (complex)."),
+    (_PHAS, "capacitor impedance", "impedance_capacitor(f_hz, Ccap)",
+     "Impedance 1/(j 2 pi f C) of a capacitor. f_hz in Hz, Ccap in F; result in ohm (complex)."),
+    (_PHAS, "series impedance", "impedance_series(z)",
+     "Sum of impedances in series. z is a vector of ohm (complex allowed); result in ohm."),
+    (_PHAS, "parallel impedance", "impedance_parallel(z)",
+     "Impedances in parallel. z is a vector of ohm (complex allowed); result in ohm."),
+    (_PHAS, "angular frequency", "angular_frequency(f_hz)",
+     "Angular frequency 2 pi f. f_hz in Hz; result in rad/s (shown as 1/s)."),
+    (_TRANS_RES, "RC time constant", "rc_time_constant(R, Ccap)",
+     "Time constant R C. R in ohm, Ccap in F; result in s."),
+    (_TRANS_RES, "RL time constant", "rl_time_constant(Lind, R)",
+     "Time constant L/R. Lind in H, R in ohm; result in s."),
+    (_TRANS_RES, "RC charge voltage", "rc_charge_voltage(Vs_step, t_s, R, Ccap)",
+     "Capacitor voltage after a voltage step. Vs_step in V, t_s in s (not negative), R in ohm, "
+     "Ccap in F; result in V."),
+    (_TRANS_RES, "RL current rise", "rl_current_rise(Vs_step, t_s, R, Lind)",
+     "Inductor current after a voltage step. Vs_step in V, t_s in s (not negative), R in ohm, "
+     "Lind in H; result in A."),
+    (_TRANS_RES, "resonant frequency", "resonant_frequency(Lind, Ccap)",
+     "Resonant frequency 1/(2 pi sqrt(L C)). Lind in H, Ccap in F; result in Hz."),
+    (_TRANS_RES, "series RLC Q", "series_rlc_quality_factor(R, Lind, Ccap)",
+     "Quality factor of a series RLC circuit. R in ohm, Lind in H, Ccap in F; result dimensionless."),
+    (_TRANS_RES, "series RLC bandwidth", "series_rlc_bandwidth(R, Lind)",
+     "Bandwidth R/(2 pi L) of a series RLC circuit. R in ohm, Lind in H; result in Hz."),
+    (_FILT, "RC low-pass cutoff", "rc_lowpass_cutoff(R, Ccap)",
+     "Cutoff frequency 1/(2 pi R C) of a first-order RC low-pass. R in ohm, Ccap in F; result in Hz."),
+    (_FILT, "RC low-pass gain", "rc_lowpass_gain(f_hz, R, Ccap)",
+     "Gain magnitude of a first-order RC low-pass. f_hz in Hz, R in ohm, Ccap in F; dimensionless."),
+    (_FILT, "RC high-pass gain", "rc_highpass_gain(f_hz, R, Ccap)",
+     "Gain magnitude of a first-order RC high-pass. f_hz in Hz, R in ohm, Ccap in F; dimensionless."),
+]
+
+MATH_TOKENS.extend(_MECH_TOKENS + _ELEC_TOKENS + _ELEC_FUNC_TOKENS + _CHEM_TOKENS + _STAT_TOKENS + _OPT_TOKENS)
 
 # Each functional tab's MATH_TOKENS categories, in display order; a tab listing more than one
 # category keeps sub-headers (today, only Elements bundles three originally distinct groups).
@@ -285,7 +366,7 @@ TAB_CATEGORIES: dict[str, tuple[str, ...]] = {
     "Statistics": (_SUM, _DIST, _TESTS, _REG),
     "Optimization": (_UNK, _SET, _RES),
     "Mechanical": ("Statics", "Strength of Materials"),
-    "Electrical": ("DC Circuits", "Power"),
+    "Electrical": ("DC Circuits", "Power", _AC, _3PH, _XFMR, _RNET, _PHAS, _TRANS_RES, _FILT),
     "Chemical": (_STOI, _GAS, _BAL, _TRANS, _KIN),
 }
 

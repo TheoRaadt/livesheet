@@ -84,3 +84,5 @@ Known issues (not tied to any one milestone)
 79. Electrical units kVA, kvar, MVA not defined (found in 034 1A review); also 034-1A-1 zero result loses unit (document in manual), 034-1A-2 garbled message for non-vector matrix arg.
 80. LaTeX cosmetics from 032 L2 review: L2-1 bracket padding, L2-2 overbrace label gap, L2-3 aligned column gap.
 81. Spec 034 1B low defects: 1B-1 zero result loses unit (t=0 with '= V'; root cause is the engine dropping units from zero - worth fixing engine-wide), 1B-2 f=0 Hz message misleading (accept DC or say 'must be greater than zero'), 1B-3 impedance_parallel([1 ohm; -1 ohm]) shows 'undefined' instead of an error, 1B-4 'a inductance' wording.
+82. Side panel at ~180 px width clips long buttons (e.g. DC 'V_out := V_in * R2 / (R1 + R2)', Chemical tab); no horizontal scrollbar. Pre-existing, found in 034 GUI-1 review. Also: tighten tests/test_formula_tabs_review_022.py to exact Electrical total 47 (>= hides extras).
+83. Manual: document the 36 Electrical tab buttons (spec 034 GUI-1) - documenter, after Theo's real-window check.

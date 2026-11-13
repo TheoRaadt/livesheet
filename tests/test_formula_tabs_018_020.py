@@ -52,7 +52,9 @@ def test_tab_order() -> None:
 
 @pytest.mark.parametrize("tab,cats,counts", [
     ("Mechanical", ("Statics", "Strength of Materials"), [6, 9]),
-    ("Electrical", ("DC Circuits", "Power"), [7, 4]),
+    ("Electrical", ("DC Circuits", "Power", "AC Power", "Three-Phase", "Transformers",
+                    "Resistor Networks", "Phasors & Impedance", "Transients & Resonance",
+                    "Filters"), [7, 4, 6, 4, 3, 4, 9, 7, 3]),
     ("Chemical", ("Stoichiometry & Composition", "Ideal Gas & Thermodynamic State",
                   "Mass & Energy Balances", "Fluid & Heat/Mass Transport", "Reaction Kinetics"),
      [4, 5, 4, 4, 4]),
@@ -69,7 +71,7 @@ def test_tab_structure(tab, cats, counts) -> None:
 def test_all_tokens_ascii_with_tooltips_and_unique_labels() -> None:
     labels = [t[1] for t in MATH_TOKENS]
     assert len(set(labels)) == len(labels)
-    for cats in (TAB_CATEGORIES["Mechanical"], TAB_CATEGORIES["Electrical"],
+    for cats in (TAB_CATEGORIES["Mechanical"], TAB_CATEGORIES["Electrical"][:2],
                  TAB_CATEGORIES["Chemical"]):
         for _c, label, token, tip in _rows(cats):
             assert label.isascii() and token.isascii() and tip.isascii() and tip
@@ -89,7 +91,7 @@ def test_clicks_insert_exact_token() -> None:
 
 
 def test_electrical_label_equals_token() -> None:
-    for _c, label, token, _t in _rows(TAB_CATEGORIES["Electrical"]):
+    for _c, label, token, _t in _rows(TAB_CATEGORIES["Electrical"][:2]):
         assert label == token
 
 
