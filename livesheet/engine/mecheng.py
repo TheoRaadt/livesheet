@@ -1,5 +1,8 @@
 """Mechanical-engineering function library, phase 1 (spec 033): mechanics of materials.
 
+Phase 2a (spec 040a) adds shaft torsion and plane-stress (Mohr) functions.
+Phase 2b (spec 040b) adds two-force statics and 1-DOF vibration functions.
+
 Section properties of plane shapes, beam deflection and maximum-moment cases, axial / bending /
 thin-wall stress and Euler column buckling. Every function is a plain positional call in a math
 region. Dimensional arguments must carry a unit of the right dimension (a bare number is an
@@ -38,6 +41,11 @@ _DIMS: dict[str, tuple[sp.Expr, str]] = {
     "force per length": (_N / _m, "1 kN/m"),
     "moment": (_N * _m, "1 N*m"),
     "pressure": (_Pa, "1 MPa"),
+    "frequency": (UNITS["Hz"], "1 Hz"),
+    "power": (UNITS["W"], "1 W"),
+    "mass": (UNITS["kg"], "1 kg"),
+    "stiffness": (_N / _m, "1 kN/m"),
+    "damping coefficient": (_N * UNITS["s"] / _m, "1 N*s/m"),
 }
 _DIM_KEYS = {name: measure(unit).dims for name, (unit, _) in _DIMS.items()}
 
@@ -48,11 +56,13 @@ DIMENSIONLESS = "dimensionless"
 class _Arg:
     name: str
     dim: str            # key of _DIMS or DIMENSIONLESS
-    positive: bool      # must be greater than zero
+    bound: str          # "positive" (> 0), "nonnegative" (>= 0) or "any"
 
 
-def _a(name: str, dim: str, positive: bool = True) -> _Arg:
-    return _Arg(name, dim, positive)
+def _a(name: str, dim: str, positive: bool | str = True) -> _Arg:
+    """``positive`` True/False keeps the phase 1 meaning; a string selects a bound by name."""
+    bound = positive if isinstance(positive, str) else ("positive" if positive else "any")
+    return _Arg(name, dim, bound)
 
 
 def _unit_for(dims: tuple[tuple[str, int], ...]) -> sp.Expr:
@@ -65,8 +75,10 @@ def _unit_for(dims: tuple[tuple[str, int], ...]) -> sp.Expr:
 def _real_number(fn: str, arg: _Arg, mag: sp.Expr) -> sp.Expr:
     if not (mag.is_number and mag.is_real):
         raise StatementError(f"{fn}: {arg.name} must be a real number")
-    if arg.positive and not mag > 0:
+    if arg.bound == "positive" and not mag > 0:
         raise StatementError(f"{fn}: {arg.name} must be greater than zero")
+    if arg.bound == "nonnegative" and mag < 0:
+        raise StatementError(f"{fn}: {arg.name} must not be negative")
     return mag
 
 
@@ -198,6 +210,109 @@ _SPEC = [
      lambda L, K, r: K * L / r, None),
     ("euler_transition_slenderness", [_a("E", "pressure"), _a("sy", "pressure")],
      DIMENSIONLESS, lambda E, sy: sp.sqrt(2 * _pi ** 2 * E / sy), None),
+]
+
+
+def _principal_angle(sx, sy, txy):
+    if sx == sy and txy == 0:
+        raise StatementError(
+            "principal_angle: no unique principal direction (sx equals sy and txy is zero)")
+    return sp.atan2(2 * txy, sx - sy) / 2
+
+
+def _mohr_radius(sx, sy, txy):
+    return sp.sqrt(((sx - sy) / 2) ** 2 + txy ** 2)
+
+
+_STRESS3 = [_a("sx", "pressure", False), _a("sy", "pressure", False),
+            _a("txy", "pressure", False)]
+_ROT = [_a("theta", DIMENSIONLESS, False)]
+
+_SPEC += [
+    # --- torsion of circular shafts (spec 040a) ---
+    ("shaft_max_shear_solid", [_a("torque", "moment", False), _a("dia", "length")], "pressure",
+     lambda torque, dia: 16 * torque / (_pi * dia ** 3), None),
+    ("shaft_max_shear_hollow",
+     [_a("torque", "moment", False), _a("dia_o", "length"), _a("dia_i", "length")], "pressure",
+     lambda torque, dia_o, dia_i: 16 * torque * dia_o / (_pi * (dia_o ** 4 - dia_i ** 4)),
+     ("dia_o", "dia_i")),
+    ("shaft_twist_solid",
+     [_a("torque", "moment", False), _a("span", "length"), _a("shear_mod", "pressure"),
+      _a("dia", "length")], DIMENSIONLESS,
+     lambda torque, span, shear_mod, dia: 32 * torque * span / (_pi * shear_mod * dia ** 4),
+     None),
+    ("shaft_twist_hollow",
+     [_a("torque", "moment", False), _a("span", "length"), _a("shear_mod", "pressure"),
+      _a("dia_o", "length"), _a("dia_i", "length")], DIMENSIONLESS,
+     lambda torque, span, shear_mod, dia_o, dia_i:
+     32 * torque * span / (_pi * shear_mod * (dia_o ** 4 - dia_i ** 4)), ("dia_o", "dia_i")),
+    ("shaft_power", [_a("torque", "moment", False), _a("freq", "frequency", False)], "power",
+     lambda torque, freq: 2 * _pi * freq * torque, None),
+    # --- plane stress, Mohr's circle (spec 040a) ---
+    ("principal_stress_max", _STRESS3, "pressure",
+     lambda sx, sy, txy: (sx + sy) / 2 + _mohr_radius(sx, sy, txy), None),
+    ("principal_stress_min", _STRESS3, "pressure",
+     lambda sx, sy, txy: (sx + sy) / 2 - _mohr_radius(sx, sy, txy), None),
+    ("max_shear_stress", _STRESS3, "pressure",
+     lambda sx, sy, txy: _mohr_radius(sx, sy, txy), None),
+    ("principal_angle", _STRESS3, DIMENSIONLESS,
+     lambda sx, sy, txy: _principal_angle(sx, sy, txy), None),
+    ("rotated_normal_stress", _STRESS3 + _ROT, "pressure",
+     lambda sx, sy, txy, theta: (sx + sy) / 2 + (sx - sy) / 2 * sp.cos(2 * theta)
+     + txy * sp.sin(2 * theta), None),
+    ("rotated_shear_stress", _STRESS3 + _ROT, "pressure",
+     lambda sx, sy, txy, theta: -(sx - sy) / 2 * sp.sin(2 * theta)
+     + txy * sp.cos(2 * theta), None),
+]
+
+def _resultant_direction(P1, P2, theta):
+    x = P1 + P2 * sp.cos(theta)
+    y = P2 * sp.sin(theta)
+    if abs(sp.N(x)) <= 1e-12 * (abs(P1) + abs(P2)) and abs(sp.N(y)) <= 1e-12 * (abs(P1) + abs(P2)):
+        raise StatementError("resultant_direction: resultant is zero, direction undefined")
+    return sp.atan2(y, x)
+
+
+def _damped_frequency(wn, zeta):
+    if not zeta < 1:
+        raise StatementError("damped_angular_frequency: zeta must be less than one")
+    return wn * sp.sqrt(1 - zeta ** 2)
+
+
+_KM = [_a("stiffness", "stiffness"), _a("mass", "mass")]
+
+_SPEC += [
+    # --- statics: two coplanar forces (spec 040b) ---
+    ("resultant_two_forces",
+     [_a("P1", "force", False), _a("P2", "force", False), _a("theta", DIMENSIONLESS, False)],
+     "force", lambda P1, P2, theta: sp.sqrt(P1 ** 2 + P2 ** 2 + 2 * P1 * P2 * sp.cos(theta)),
+     None),
+    ("resultant_direction",
+     [_a("P1", "force", False), _a("P2", "force", False), _a("theta", DIMENSIONLESS, False)],
+     DIMENSIONLESS, lambda P1, P2, theta: _resultant_direction(P1, P2, theta), None),
+    ("force_x_component", [_a("P", "force", False), _a("theta", DIMENSIONLESS, False)], "force",
+     lambda P, theta: P * sp.cos(theta), None),
+    ("force_y_component", [_a("P", "force", False), _a("theta", DIMENSIONLESS, False)], "force",
+     lambda P, theta: P * sp.sin(theta), None),
+    ("friction_limit", [_a("mu", DIMENSIONLESS, "nonnegative"), _a("Fn", "force")], "force",
+     lambda mu, Fn: mu * Fn, None),
+    # --- single degree of freedom vibration (spec 040b) ---
+    ("natural_angular_frequency", _KM, "frequency",
+     lambda stiffness, mass: sp.sqrt(stiffness / mass), None),
+    ("natural_frequency_hz", _KM, "frequency",
+     lambda stiffness, mass: sp.sqrt(stiffness / mass) / (2 * _pi), None),
+    ("damped_angular_frequency",
+     [_a("wn", "frequency"), _a("zeta", DIMENSIONLESS, "nonnegative")], "frequency",
+     lambda wn, zeta: _damped_frequency(wn, zeta), None),
+    ("damping_ratio",
+     [_a("damping", "damping coefficient", "nonnegative")] + _KM, DIMENSIONLESS,
+     lambda damping, stiffness, mass: damping / (2 * sp.sqrt(stiffness * mass)), None),
+    ("critical_damping", _KM, "damping coefficient",
+     lambda stiffness, mass: 2 * sp.sqrt(stiffness * mass), None),
+    ("log_decrement", [_a("x1", "length"), _a("x2", "length")], DIMENSIONLESS,
+     lambda x1, x2: sp.log(x1 / x2), ("x1", "x2")),
+    ("damping_ratio_from_log_decrement", [_a("delta", DIMENSIONLESS)], DIMENSIONLESS,
+     lambda delta: delta / sp.sqrt(delta ** 2 + (2 * _pi) ** 2), None),
 ]
 
 MECH_BUILTINS: dict[str, Callable] = {

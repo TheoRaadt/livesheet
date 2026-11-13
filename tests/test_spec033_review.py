@@ -78,7 +78,7 @@ def test_no_collision_with_units_or_keywords():
         assert n not in UNITS
     # keyword/builtin key sets other than the mech entries themselves
     from livesheet.engine.mecheng import MECH_BUILTINS
-    assert set(MECH_BUILTINS) == set(NAMES)
+    assert set(NAMES) <= set(MECH_BUILTINS)  # phase 2 names (spec 040a) are added on top
     others = set(evaluator.BUILTINS) - set(MECH_BUILTINS)
     assert not set(NAMES) & others
 

@@ -34,7 +34,7 @@ def err(src: str) -> str:
 # --- registration and naming ---------------------------------------------------------------
 
 def test_28_names_and_registered():
-    assert len(MECH_BUILTINS) == 28
+    assert len(MECH_BUILTINS) == 51  # 28 phase 1 + 11 phase 2a + 12 phase 2b (spec 040)
     for name in MECH_BUILTINS:
         assert name in evaluator.BUILTINS
 
