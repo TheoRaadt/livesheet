@@ -49,3 +49,9 @@ Specs 023-030 (drag-to-move, toolbar, Statistics/Optimization/Outline/Data tabs,
 ## How to run
 `source ~/livesheet-venv/bin/activate && livesheet` (new empty sheet) or `livesheet file.lsheet`.
 PyCharm: interpreter ~/livesheet-venv, run module `livesheet`, no QT_QPA_PLATFORM env var.
+
+## Update 2026-11-13
+- Independent reviews done and PASS: 032 L2, 034 phase 1A (reviews in docs/board/reviews/).
+- Manual written for specs 031, 032, 033, 034 1A (surface-plots, latex-text, mechanical-library, electrical-library, errors.md, README). SI-only units change still NOT documented (stale mentions: cad-profiles.md, errors.md:156, formula-tabs.md:87).
+- New backlog: 79 (kVA/kvar/MVA, 034 low defects), 80 (LaTeX cosmetics). Uncommitted: awaiting Theo's approval.
+- Next: spec 034 phase 1B, GUI-1; Theo's real-window checks (incl. Ctrl+Alt+4 OS clash).

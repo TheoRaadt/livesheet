@@ -54,5 +54,17 @@ It grows as features ship; a page only appears here once a feature is finished a
   as a dataset (delimiter, decimal mark, header, units like `name [unit]`), using its columns such
   as `run1_t` in `mean`, `fit_linear` and plots, the Data tab (Import, Refresh, Rename, Remove),
   saving data inside the sheet (file format 5), and the limits.
+- [3-D surface plots](surface-plots.md) - Insert > 3-D plot, the `surface` text lines (`over`,
+  `across`, `show`, `draw`, `view`, units and limits), dragging to rotate, the wheel to zoom,
+  moving the region by its frame, and Reset 3-D view.
+- [LaTeX formulas in text regions](latex-text.md) - writing `$...$` and `$$...$$` formulas in a text
+  region, the Insert > Formula items and shortcuts, the View > Typeset LaTeX switch, the supported
+  commands, and what a wrong formula looks like.
+- [Mechanical engineering functions](mechanical-library.md) - 28 ready-made functions for cross
+  sections, beam deflection and moments, stress and strain, and Euler columns, with strict units
+  and SI results.
+- [Electrical engineering functions](electrical-library.md) - 17 ready-made functions for resistor
+  networks, RMS and peak, AC power, three-phase and transformers, the new units mH, uH, nH, pF, VA
+  and var, and the zero-result and `0 ohm` limits.
 - [Error messages](errors.md) — every message LiveSheet can show you while using the features
   above, grouped by area, with what causes it and how to fix it.

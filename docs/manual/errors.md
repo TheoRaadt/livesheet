@@ -428,3 +428,107 @@ except the first.
 The larger Standard toolbar adds no error messages. If you cannot see the names on the buttons,
 the window is narrow: the toolbar shows pictures only, with the name in the tooltip. See
 [The main window](main-window.md#how-the-toolbar-looks).
+
+## 3-D surface plots
+
+These appear in the plot frame of a `surface` region. `<...>` stands for text from your sheet. See
+[3-D surface plots](surface-plots.md). Messages about axis units, limits and labels are the same as
+for 2-D plots (see [Plots](#plots)), with `x`, `y` or `z` as the axis name, for example
+`zunit given but z has no unit` or `lower limit must be below upper limit`.
+
+| Message | Cause | Fix |
+|---|---|---|
+| `Unknown 3-D plot option '<word>'` | A line starts with a word the 3-D plot does not know (for example `colour`). | Use only `over`, `across`, `show`, `draw`, `view`, `xunit`, `yunit`, `zunit`, `xlim`, `ylim`, `zlim`, `title`, `xlabel`, `ylabel`, `zlabel`. |
+| `surface needs an 'over' line` / `surface needs an 'across' line` / `surface needs a 'show' line` | One of the three required lines is missing. | Add the missing line. |
+| `surface takes exactly one 'show' line` | Two or more `show` lines. | Keep a single `show` line. |
+| `only one '<word>' line is allowed` (e.g. `only one 'over' line is allowed`) | The same option is written twice. | Keep one line of that kind. |
+| `show needs an expression` | The `show` line has nothing after it. | Write the height expression. |
+| `over needs 'NAME from A to B [points N]'` (also for `across`) | The line is not a name, nor a range variable or vector, nor the sampling form. | Write `over x from 0 to 1 points 25`, or name a range variable or vector. |
+| `over needs a name before 'from'` (also for `across`) | The sampling form has no valid name before `from`. | Start with a name, for example `x from 0 to 1`. |
+| `over needs a range variable or a vector` (also for `across`) | The line names a single value. | Name a range variable or a vector. |
+| `over needs a vector (one row or one column)` (also for `across`) | A matrix with several rows and columns was given as an axis. | Give a single row or column. |
+| `over and across need different names` | Both axes use the same name. | Give each axis its own name. |
+| `points must be between 2 and 100` | `points` is not a whole number from 2 to 100. | Use a whole number from 2 to 100, or leave it out (25). |
+| `over has more than 100 values for a 3-D plot` (also for `across`) | A vector axis has over 100 entries. | Use a shorter vector. |
+| `range has more than 100 values for a 3-D plot` | An axis range variable has over 100 values. | Use a range with at most 100 values. |
+| `Sampling limits must be finite real numbers` | A `from` or `to` value is infinite or undefined. | Use ordinary finite numbers. |
+| `Units do not match: sampling limits have different units` | `from` and `to` are in different kinds of unit. | Use the same kind of unit on both. |
+| `draw must be mesh or wire` | `draw` was followed by another word. | Write `draw mesh` or `draw wire`. |
+| `view needs two numbers: azimuth and elevation` | `view` has fewer or more than two values. | Write `view 40 30`. |
+| `view needs two plain numbers` | A `view` value is not a plain number (for example `view 40 m`). | Use plain numbers, in degrees. |
+| `elevation must be between -90 and 90` | The second `view` number is outside that range. | Use an elevation from -90 to 90. |
+| `no finite values to plot` | Every height is undefined (for example `sqrt(x - 10)` over 0 to 2), or an axis value is not finite. | Change the expression or the ranges so at least one height is a real number. |
+| `show '<text>' needs a single value` | The `show` expression gives a vector or matrix. | Give an expression that is one number per grid point. |
+| `<name> is not defined` | An axis or the `show` expression uses a name defined nowhere earlier. If it is defined further along, the 'defined later' hint is added (see [above](#the-defined-later-hint)). | Define it above the plot, or fix the typo. |
+| `Units do not match` | A `zunit`/`xunit`/`yunit` or a limit has a different kind of unit than its axis, or the `show` expression mixes units. | Use the matching kind of unit. |
+
+## LaTeX formulas in text regions
+
+These appear as a red line under a text region (starting with `LaTeX:`), as the region's tooltip and
+as a dotted underline in the formula. The line has the form `LaTeX: <message> (formula N, character
+C)`, where N counts the formulas in the region and C is the character of the formula where the
+problem begins; with more than one wrong formula it ends `(+N more)`. See
+[LaTeX formulas in text regions](latex-text.md). `\cmd` stands for the command as you typed it.
+
+| Message | Cause | Fix |
+|---|---|---|
+| `unknown command \cmd` | The command is not in the supported list. | Check the spelling, or see the supported list in the manual page. |
+| `unsupported: \cmd` | A command that LiveSheet does not do at all (for example `\newcommand`, `\color`, `\label`, `\usepackage`), or `\\` outside a table. | Leave it out. For numbered equations or `align`, use `$$` with `aligned`. |
+| `unsupported: &` | An `&` outside a table environment. | Write `\&` for a literal ampersand, or put the formula in a `matrix`/`aligned`. |
+| `unsupported character <c>` | A plain character that has no meaning in math. | Remove it or write it with `\text{...}`. |
+| `% is not supported` | A percent sign inside a formula. | Write `\%`. |
+| `stray $` | A single `$` inside a display formula. | Remove it, or write `\$`. |
+| `\cmd needs an argument` / `\cmd needs two arguments` (e.g. `\frac needs two arguments`) | A command is missing its `{...}` part(s). | Supply them: `\frac{a}{b}`. |
+| `\cmd needs a delimiter` | `\left`, `\right` or `\big` was not followed by a bracket. | Follow it with `(`, `[`, `\{`, `|`, `.` and so on. |
+| `\cmd needs an environment name` | `\begin` or `\end` has no `{name}`. | Write `\begin{pmatrix}`. |
+| `incomplete command at end of formula` | The formula ends with a lone `\`. | Remove it or finish the command. |
+| `missing closing }` / `unexpected }` / `missing closing ]` | Braces (or the `[...]` index of `\sqrt`) do not pair up. | Add the missing bracket, or remove the extra one. |
+| `missing \right for \left` / `\right without \left` | `\left` and `\right` do not pair up. | Add the other one (use `\right.` for no visible bracket). |
+| `missing \end{env}` / `\begin{env} is not supported` / `\end{env} does not match \begin{other}` / `unexpected \end` | A table environment is not closed, is not one of the supported ones, or closes with the wrong name. | Match each `\begin{...}` with its `\end{...}`, using only the supported environments. |
+| `\begin{array} needs a column specification` / `array column specification may only use l, c and r` / `array row has more cells than its column specification` | The `array` has no column letters, uses letters other than l, c, r, or a row has more cells than letters. | Write for example `\begin{array}{lcr}` and keep every row within its letters. |
+| `matrix too large (limit 50 x 50)` | A table has more than 50 rows or columns. | Make it smaller. |
+| `double superscript` / `double subscript` | `x^2^3` or `x_1_2`. | Group it: `x^{2^3}`. |
+| `\cmd must be at the start of a group` / `\cmd must follow a big operator` | `\displaystyle` or `\textstyle` is not at the start of a group, or `\limits`/`\nolimits` is not right after a big operator such as `\sum`. | Move it. |
+| `\operatorname needs an argument` / `\operatorname needs a plain name` / `\text needs an argument` | `\operatorname` or `\text` has no name, or the name holds more than letters. | Write `\operatorname{rank}` or `\text{words}`. |
+| `formula too deeply nested (limit 32)` | More than 32 levels of braces and structures. | Simplify the formula. |
+| `formula too long (limit 2000 characters)` | One formula is over 2000 characters. | Split it into several. |
+| `too many formulas in this region (limit 200)` | A text region has more than 200 formulas; the extra ones stay as plain text. | Split the text into several regions. |
+| `internal error in formula` | An unexpected fault while typesetting that one formula. | Simplify or rewrite the formula; your text is not changed. |
+
+## Mechanical engineering functions
+
+These appear on the line that calls the function. `<fn>` is the function's own name and `<arg>` the
+name of an argument as listed in [Mechanical engineering functions](mechanical-library.md).
+
+| Message | Cause | Fix |
+|---|---|---|
+| `<fn>: <arg> needs a unit of <kind>, for example <unit>` (e.g. `rect_area: b needs a unit of length, for example 1 mm`) | A number with no unit was given where a length, force, pressure and so on is needed. This includes a literal zero such as `0 m`, which loses its unit. | Write the unit, for example `50 mm`; use a small positive value in place of 0 where zero is not allowed. |
+| `<fn>: <arg> must be a <kind>, not <unit>` (e.g. `rect_area: h must be a length, not kg`) | The argument has the wrong kind of unit. | Give it a unit of the right kind. |
+| `<fn>: <arg> must be dimensionless` | A plain-number argument (such as `K`) was given a unit. | Remove the unit. |
+| `<fn>: <arg> must be greater than zero` (e.g. `circle_inertia: d must be greater than zero`) | A length, area, modulus, thickness or `K` is zero or negative. | Use a positive value. |
+| `<fn>: <arg> must be larger than <arg2>` (e.g. `ring_inertia: do must be larger than di`) | The outer diameter is not larger than the inner. | Swap the two, or fix the values. |
+| `<fn>: <arg> must be a real number` | The argument is complex or not a number. | Use a real number. |
+| `<fn>: <arg> has inconsistent units (...)` | The argument itself mixes incompatible units. | Make the units of that argument consistent. |
+| `Wrong number of arguments` | The function was called with too few or too many arguments. | Match the argument list in the manual page. |
+| `<name> is not defined` | An argument uses a name that is not defined earlier. If it is defined further along, the 'defined later' hint is added (see [above](#the-defined-later-hint)). | Define it above the call. |
+| `Units do not match: result is <unit>` | You asked for a display unit of a different kind from the result (for example `= kN` on a moment). A zero result also loses its unit, so a requested unit then fails. | Ask for a unit of the right kind, or use a bare `=` for a zero. |
+
+## Electrical engineering functions
+
+The same patterns apply as for the mechanical functions; the unit kinds here are `voltage`,
+`current` and `resistance`. See [Electrical engineering functions](electrical-library.md).
+
+| Message | Cause | Fix |
+|---|---|---|
+| `<fn>: <arg> needs a unit of <kind>, for example <unit>` (e.g. `voltage_divider: Vin needs a unit of voltage, for example 1 V`; `R1 needs a unit of resistance, for example 1 ohm`) | A number with no unit where a voltage, current or resistance is needed. This also appears for `0 ohm`, whose unit is lost. | Write the unit; use a positive value instead of zero. |
+| `<fn>: <arg> must be a <kind>, not <unit>` (e.g. `voltage_divider: R2 must be a resistance, not A`) | The argument has the wrong kind of unit. | Give it the right kind. |
+| `<fn>: <arg> must be an angle in radians, not <unit>` (e.g. `average_power: phi must be an angle in radians, not V`) | The angle was given with a unit other than a plain number, `rad` or `deg`. | Write a number, a `pi` expression, `rad` or `deg`. |
+| `<fn>: <arg> must be a plain number of turns, not <unit>` | A winding count (`Np`, `Ns`) was given a unit. | Write the count as a plain number. |
+| `<fn>: <arg> must be greater than zero` (e.g. `resistors_parallel: R must be greater than zero`, `transformer_secondary_voltage: Np must be greater than zero`) | A resistance, RMS or peak value, or turns count is zero or negative. | Use a positive value. |
+| `<fn>: R must be a vector` (e.g. `resistors_series: R must be a vector`) | The list of resistances is a table with several rows and columns. | Use one column (`[10 ohm; 22 ohm]`) or one comma-separated row. |
+| `<fn>: needs at least one resistance` | The list of resistances is empty. | Give at least one resistance. |
+| `<fn>: R must be a resistance, not <odd unit>` with a strange unit such as `kg²·m⁴/(s⁶·A⁴)` | A row was written with spaces only, for example `[10 ohm 22 ohm]`, which reads as one product. | Separate entries with commas, `[10 ohm, 22 ohm]`, or semicolons. |
+| `<fn>: <arg> must be a real number` / `<fn>: <arg> has inconsistent units (...)` | The argument is complex or mixes incompatible units. | Use a real number with consistent units. |
+| `Wrong number of arguments` | The wrong count of arguments. | Match the argument list in the manual page. |
+| `<name> is not defined` | An argument uses an undefined name. If it is defined further along, the 'defined later' hint is added. | Define it above the call. |
+| `Units do not match: result is <unit>` (e.g. `Units do not match: result is dimensionless`) | A display unit of another kind was requested, or the result is exactly zero (it then has lost its unit, for example `average_power(230 V, 10 A, pi/2) = W`). | Use a matching unit, or a bare `=` for a zero result, which shows `= 0`. |

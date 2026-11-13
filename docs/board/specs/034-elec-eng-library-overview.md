@@ -258,3 +258,13 @@ Phase 6, network analysis and machines (spec 039 candidate, sources to fetch fir
 - `livesheet/engine/units.py`: four added unit names for power and henry/farad prefixes (existing pattern).
 - `livesheet/gui/sidepanel.py`: one extra token list and new sub-categories in the existing Electrical tab (spec 020's pattern).
 - No `.lsheet` change, no new dependency (complex arithmetic and sqrt/exp come from SymPy, already approved). Phase 4 uses scipy.constants (already approved).
+
+## Phase 1B implementation annotations (developer, 2026-11-13)
+All 19 functions in `livesheet/engine/electrical.py`; every numeric criterion 19-30 re-checked against the live engine and plain math (all values agree within the stated tolerances). Discrepancies and engine quirks (meaning of the spec unchanged):
+1. Criterion 20: "real part 0" cannot be tested as `re(impedance_inductor(...)) = ohm`; the engine drops the unit of a zero, so that gives "Units do not match: result is dimensionless". A bare `impedance_inductor(50 Hz, 0.1 H) =` prints `31.4159i Ω`; the imaginary part via `im(...) = ohm` works.
+2. Criterion 19/23 tolerance 1e-9 for `phasor_angle` is not observable through `=` (6 significant digits displayed); verified at 1e-9 by calling the builtin directly. `angular_frequency(50 Hz) =` prints `314.159 s⁻¹` as spec'd; `= Hz` prints Hz (same dimension).
+3. Criterion 34: `impedance_parallel([])` never reaches the function; the engine rejects the empty bracket first with "Empty matrix" (same for 1A `resistors_parallel([])`). The function's own "needs at least one impedance" message exists but is only reachable programmatically.
+4. Criterion 35: `rc_time_constant(R, C)` with nothing defined gives "R is not defined", not "C, R are not defined", because `C` is the coulomb unit and so is never an undefined name. Same landmine as the placeholder note in GUI-4: `Ccap` avoids it.
+5. Zero handling (not in spec): a time of `0 s` loses its unit in the engine, so `t` (nonneg) and impedance vector entries / `z` arguments accept a bare 0. `rc_charge_voltage(12 V, 0 s, ...) =` gives 0 (and `= V` fails, same defect as 034-1A-1). `impedance_parallel` with a zero entry gives "z must not contain a zero impedance"; `phasor_angle` of zero gives "z must not be zero".
+6. Wording: a dimension error for inductance reads "L must be a inductance, not V" (shared template "must be a <dimension>"); cosmetic, same pattern as 1A.
+7. `phasor(mag, phi)` accepts any unit (or none) for `mag` and keeps it; `phasor_magnitude(z)` keeps the unit of z (accepts kV, displays `= kV`). Argument names in hints and errors follow the spec table (f, L, C, Vs, t); GUI placeholder names (f_hz, Lind, Ccap) are a GUI-1 concern.

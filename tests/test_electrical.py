@@ -31,8 +31,8 @@ def err(src: str) -> str:
 
 # --- registration -----------------------------------------------------------------------------
 
-def test_17_names_registered():
-    assert len(ELEC_BUILTINS) == 17
+def test_36_names_registered():
+    assert len(ELEC_BUILTINS) == 36
     for name in ELEC_BUILTINS:
         assert name in evaluator.BUILTINS
 
