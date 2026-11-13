@@ -279,3 +279,8 @@
 
 ## 2026-11-12 Vendor manuals must not be opened (spec 033 research)
 Vendor owner's manuals hosted on third-party archives for the commercial mechanical-engineering application package must not be opened by any agent (ip-cleanroom rule 7). Only subject-area nouns from public listings were used. Manager defaults for spec 033 open questions: strict units, explicit standard gravity, no built-in material/section tables until Theo names a freely licensed source, no standards-based code checks.
+
+## 2026-11-13 Theo's answers (specs 040/041)
+- 040 OQ1 deg: document only, do not remove deg. 041 OQ1: fluid functions use 9.80665 literal. 041 OQ4: NO mPa unit. 040 OQ8: split into 040a (torsion + plane stress) and 040b (statics + vibration). 040 OQ7: YES, phase 1 (spec 033) also gets a Mechanical-tab button group (needs a small GUI spec). 040 OQ5: accept interchangeable equal base dimensions.
+- Electrical specs 035-037 questions: not yet answered by Theo; manager proceeds with the specialist's recommendations (zero rule, 0/1 logic only, logic_equivalent, ideal op-amp symmetric rails, kelvin-only ideal diode, add uA/nA/pA) unless Theo objects. Build order 035, 036, 037, one developer at a time (shared files).
+- 2026-11-13 Theo CONFIRMED the electrical recommendations: zero rule, logic (0/1, logic_equivalent), op-amps (ideal, symmetric rails), diode (kelvin only, ideal Shockley, add uA/nA/pA). Specs 035-037 are approved to build after 040a/040b/041.
